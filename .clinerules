@@ -1,0 +1,155 @@
+# Roo Project Rules (Global)
+
+**Applies to:** All Roo agents and tasks in this repository.
+
+## Purpose
+Provide always-on, repository-wide guidance to ensure consistency, minimal-comment practices, and coherent architecture.
+
+## Core Directives
+
+### 1) Consistency-first rule (must-do before writing code)
+Before writing new code which establishes a new pattern, dev practice, minor architecture solution, algorithm, or UI technique, proactively search the repo for existing patterns, utilities, or implementations that solve a similar problem.
+
+**Align with the established approach for:**
+- State management (e.g., Redux Toolkit, Zustand, Recoil, Context)
+- Data fetching/caching (e.g., React Query, SWR, custom API client)
+- HTTP layer (e.g., fetch wrapper, Axios instance, interceptors)
+- Form management (e.g., React Hook Form, Formik)
+- Styling (e.g., CSS Modules, Tailwind, styled-components)
+- Error handling and notifications
+- File/folder structure, naming conventions, barrel exports, and index placement
+- Testing libraries and patterns (e.g., Vitest/Jest, Testing Library)
+
+**Do not introduce parallel patterns, dual sources of truth, or divergent frameworks** without explicit instruction. If a new pattern seems necessary, propose it first with a short ADR draft in docs/adr (include context, options considered, decision, consequences).
+
+**Operational checklist:**
+- Scan the codebase (components, hooks, services/api, utils, lib) and package.json to infer patterns
+- Summarize the chosen existing pattern before coding
+- If conflicts are found, prefer refactoring toward the dominant repo pattern
+
+### 2) Minimal-comment policy (rate 1–10; only write if ≥ 8)
+Before adding any comment, ask: **"On a scale of 1–10, how necessary is a comment here for future readers to understand, maintain, or safely modify this code?"**
+
+**If the answer is less than 8, do not add the comment.**
+
+Prefer self-explanatory code: descriptive names, small functions, strong TypeScript types, and tests over comments.
+
+**Acceptable comments (when necessity ≥ 8):**
+- Non-obvious invariants, edge-case constraints, or cross-cutting concerns
+- Security, performance, or concurrency footguns
+- Links to ADRs, design docs, or external contracts that impact behavior
+- Public API TSDoc for exported, stable APIs (keep succinct)
+- TODO statements should not be created but also should not be removed without explicit instruciton
+
+**Never leave commented-out code.** Remove it or gate it behind feature flags if essential.
+
+### 3) Task workflow contract (how Roo should operate)
+- **At task start:** confirm you will follow these rules. Explicitly list detected patterns relevant to the task (state, data fetching, HTTP, styling, tests)
+- **Before writing a new module/component:** show which existing pattern or module you will align with and where it lives
+- **After implementing:** ensure formatting, linting, and tests run with the repo's existing toolchain. Use the existing package manager (detect via lockfile)
+- **If uncertainty remains:** ask for clarification before proceeding
+
+### 4) General repository alignment
+- Respect existing toolchain and scripts from package.json (package manager, lint/test commands)
+- Keep dependencies consistent. Avoid adding new libs unless required and approved
+- Prefer colocated tests alongside modules, matching the repo's current convention
+
+**🚨 NEVER DISABLE LINTING, COMPILATION, OR TYPE ERRORS 🚨**
+
+**CRITICAL RULE:** Do not use eslint-disable, @ts-ignore, @ts-expect-error, or similar pragmas to bypass linting or type errors. These hide problems rather than solve them.
+
+**When encountering lint/type errors:**
+1. **FIX THE ROOT CAUSE** - Refactor code to satisfy the rule properly
+2. **RESTRUCTURE** - Modify the code structure to avoid the issue
+3. **CONFIGURE** - If the rule is genuinely inappropriate, update the config file (eslint.config.js, tsconfig.json) with proper justification
+
+**Examples of proper fixes:**
+- ❌ `// eslint-disable-next-line react-refresh/only-export-components`
+- ✅ Move test utilities to separate config that disables the rule for test files
+- ✅ Replace `export *` with explicit named exports
+- ✅ Capture ref values in effect scope to satisfy exhaustive-deps
+
+**Only exception:** Generated code or third-party dependencies that cannot be modified. Even then, isolate with targeted config changes, not inline disables.
+
+### 5) Complexity reduction mandate (simplest solution wins)
+**ALWAYS prefer the simplest solution that meets the specification.** When implementing features or refactoring, actively reduce complexity rather than add it.
+
+**Core principle:** Lower complexity is a primary goal, second only to meeting the specification requirements.
+
+**Operational rules:**
+- Choose the solution with fewest moving parts, abstractions, or layers
+- Eliminate redundant code, duplicate patterns, or parallel implementations
+- Refactor complex solutions into simpler ones when discovered
+- Question every abstraction: "Does this actually reduce complexity, or just hide it?"
+
+**🚨 BACKWARD COMPATIBILITY RED FLAG 🚨**
+
+**The phrase "backward compatibility" is a CRITICAL WARNING SIGN.**
+
+**NEVER independently implement backward compatibility, multi-version support, or dual implementations** without explicit approval. If you believe backward compatibility is necessary:
+
+1. **STOP** implementation immediately
+2. **ASK** the user for explicit approval with a clear proposal:
+   - What will be maintained for backward compatibility
+   - Why it's necessary
+   - What complexity it adds
+   - What the migration path would be instead
+3. **WAIT** for explicit instruction before proceeding
+
+**Rationale:** Backward compatibility:
+- Creates dual sources of truth that evolve independently
+- Multiplies maintenance burden and bug surface area
+- Fragments the codebase into parallel implementations
+- Prevents clean evolution toward better patterns
+- Adds permanent complexity that compounds over time
+
+**Default approach:** Migrate/refactor to the new pattern. Delete the old one. Move forward as a cohesive unit.
+
+**Exception:** Only implement backward compatibility when explicitly instructed after review.
+
+### 6) Evolving architecture mandate (stay flexible, plan incrementally)
+**NEVER over-architect or plan too far ahead.** Build incrementally, validate constantly, and maintain the ability to pivot when requirements change.
+
+**Core philosophy:** Complex systems evolve successfully through iteration, not through perfect up-front planning. Requirements change, assumptions fail, and Murphy's Law applies. Stay adaptable.
+
+**Operational rules:**
+- **Build iteratively:** Implement the minimum viable solution first, then evolve based on actual needs
+- **Validate early:** Test assumptions and designs with working code as quickly as possible
+- **Stay modular:** Design components, functions, and abstractions so they can be replaced or refactored without cascading changes
+- **Avoid tight coupling:** Don't hardcode dependencies on specific libraries, external services, or implementation details
+  - Use abstraction layers (interfaces, adapters) for external dependencies
+  - Prefer dependency injection over direct imports of concrete implementations
+  - Keep business logic separate from framework/library-specific code
+- **Question assumptions:** Before committing to a particular approach, ask: "What would we do if this assumption proves wrong?"
+- **Defer irreversible decisions:** Make decisions as late as possible when you have maximum information
+- **Plan one or two steps ahead, not ten:** Focus on the immediate task and the next logical step, not distant future scenarios
+
+**Red flags that indicate over-planning:**
+- Designing abstractions for "future extensibility" that aren't needed now
+- Building configuration systems before you know what needs to be configured
+- Creating complex class hierarchies or inheritance structures
+- Implementing features "because we'll need them eventually"
+- Choosing architectures based on hypothetical scale rather than current needs
+
+**When you catch yourself over-planning:**
+1. **STOP** implementation
+2. **SIMPLIFY** to the minimum that solves the current requirement
+3. **DOCUMENT** assumptions in a comment (≥8 necessity) or ADR if significant
+4. **BUILD** what's needed now, knowing you can refactor later
+
+**Practical examples:**
+- ✅ Use a simple fetch wrapper → ❌ Build a complex HTTP client with retry logic, caching, and request queuing before knowing you need it
+- ✅ Hard-code API endpoint → ❌ Create a multi-environment configuration system for a single-environment app
+- ✅ Use `useState` for current needs → ❌ Set up Redux "because we might need global state later"
+- ✅ Write the feature → ❌ Design an extensible plugin system first
+
+**Exception:** If a decision is truly irreversible (database choice, foundational architecture), invest appropriate planning time. But these are rarer than they seem.
+
+## Enforcement Heuristic
+**If a proposed change creates a duplicate or conflicting pattern, stop and propose consolidation or a refactor plan instead.**
+
+**If complexity is increasing without clear necessity, stop and simplify.**
+
+**If you're considering backward compatibility, STOP and ask for approval first.**
+
+**If you're planning more than 1-2 steps ahead or building for hypothetical future needs, STOP and simplify to current requirements.**
