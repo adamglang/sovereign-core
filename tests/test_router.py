@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from sovereign_core.brain.llm_factory import create_llm_provider
+from sovereign_core.brain.llm_factory import get_llm_provider
 from sovereign_core.ipc.database import get_command_result, init_database
 from sovereign_core.router import IntentType, Router, RouterResponse
 
@@ -31,7 +31,7 @@ def router(test_db):
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
     
-    llm_provider = create_llm_provider(
+    llm_provider = get_llm_provider(
         provider="openai",
         model="gpt-4o-mini",
         temperature=0.7,
