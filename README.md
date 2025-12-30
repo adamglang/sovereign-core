@@ -91,6 +91,38 @@ For the proof-of-concept, Sovereign Core must:
 
 ---
 
+## Quick Start
+
+### Prerequisites
+- Windows 11 (native, not WSL)
+- Python 3.11 or 3.12
+- OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+- Porcupine access key ([get one here](https://console.picovoice.ai/))
+
+### Installation
+```bash
+# Clone and navigate to directory
+cd sovereign-core
+
+# Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+
+# Set environment variables
+set OPENAI_API_KEY=sk-your-key-here
+set PORCUPINE_ACCESS_KEY=your-key-here
+
+# Run the assistant
+python -m sovereign_core.main
+```
+
+**For complete setup instructions, troubleshooting, and configuration options, see [`SETUP.md`](SETUP.md).**
+
+---
+
 ## Architecture
 
 For complete architectural details, see [`docs/architecture.md`](docs/architecture.md).
@@ -101,8 +133,8 @@ For overall project context, see [`../docs/sovereign.md`](../docs/sovereign.md).
 
 ## Mental Model
 
-> Sovereign Core is the assistant you interact with.  
+> Sovereign Core is the assistant you interact with.
 > Sovereign Executor is invisible.
 
-Core listens, thinks, decides, and speaks.  
+Core listens, thinks, decides, and speaks.
 It never acts.
