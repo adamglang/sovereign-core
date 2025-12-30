@@ -1,6 +1,7 @@
 """Test Wake Word Detector functionality."""
 
 import struct
+import threading
 from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
@@ -60,14 +61,12 @@ def test_detector_initialization(valid_wake_word_config):
     detector = WakeWordDetector(valid_wake_word_config)
     
     assert detector.config == valid_wake_word_config
-    assert detector._porcupine is None
-    assert detector._audio_stream is None
-    assert detector._pa is None
-    assert detector._running is False
+    assert detector._provider is not None
+    assert detector.provider_name == "porcupine"
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
-@patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio')
 def test_detector_start_initialization(
     mock_pyaudio_class,
     mock_pvporcupine,
@@ -75,26 +74,27 @@ def test_detector_start_initialization(
     mock_porcupine,
 ):
     """Test detector start initializes Porcupine and PyAudio."""
+    # Configure mock to detect wake word immediately so generator yields
+    mock_porcupine.process.return_value = 0
     mock_pvporcupine.create.return_value = mock_porcupine
     mock_pa_instance = MagicMock()
     mock_stream = MagicMock()
     mock_pyaudio_class.return_value = mock_pa_instance
     mock_pa_instance.open.return_value = mock_stream
     
-    # Mock audio stream to return empty data and immediately stop
-    mock_stream.read.side_effect = [
-        struct.pack('h' * 512, *([0] * 512)),  # One frame
-        Exception("Stop iteration"),  # Stop loop
-    ]
+    # Mock audio stream to return one frame of data
+    audio_frame = struct.pack('h' * 512, *([0] * 512))
+    mock_stream.read.return_value = audio_frame
     
     detector = WakeWordDetector(valid_wake_word_config)
     
     try:
         gen = detector.start()
-        next(gen)  # Start the generator
-    except (StopIteration, Exception):
-        pass
+        # Start the generator (this initializes Porcupine and PyAudio, then yields detection)
+        detection = next(gen)
+        assert isinstance(detection, WakeWordDetection)
     finally:
+        # Stop detector to exit the loop and cleanup
         detector.stop()
     
     # Verify Porcupine was created with correct parameters
@@ -111,8 +111,8 @@ def test_detector_start_initialization(
     assert open_kwargs["channels"] == 1
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
-@patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio')
 def test_detector_yields_detection_event(
     mock_pyaudio_class,
     mock_pvporcupine,
@@ -158,8 +158,8 @@ def test_detector_yields_detection_event(
         detector.stop()
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
-@patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio')
 def test_detector_handles_audio_processing_errors(
     mock_pyaudio_class,
     mock_pvporcupine,
@@ -173,12 +173,15 @@ def test_detector_handles_audio_processing_errors(
     mock_pyaudio_class.return_value = mock_pa_instance
     mock_pa_instance.open.return_value = mock_stream
     
-    # Simulate processing error followed by successful frames
-    mock_porcupine.process.side_effect = [
-        RuntimeError("Processing error"),
-        -1,  # Successful frame
-        Exception("Stop"),
-    ]
+    call_count = [0]
+    
+    def mock_process_with_error(pcm):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise RuntimeError("Processing error")
+        return 0  # Detection on second call
+    
+    mock_porcupine.process.side_effect = mock_process_with_error
     
     audio_frame = struct.pack('h' * 512, *([0] * 512))
     mock_stream.read.return_value = audio_frame
@@ -187,20 +190,24 @@ def test_detector_handles_audio_processing_errors(
     
     try:
         gen = detector.start()
-        next(gen)  # Should continue despite error
-    except Exception:
-        pass
+        # First frame raises RuntimeError, is caught, logs error, continues
+        # Second frame detects wake word and yields
+        detection = next(gen)
+        assert isinstance(detection, WakeWordDetection)
+        assert detection.detected is True
+        # Verify error was encountered and recovered from
+        assert call_count[0] == 2
     finally:
         detector.stop()
 
 
 def test_detector_cannot_start_twice(valid_wake_word_config):
     """Test that detector raises error if started while already running."""
-    with patch('sovereign_core.ears.wake_word_detector.pvporcupine'), \
-         patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio'):
+    with patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine'), \
+         patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio'):
         
         detector = WakeWordDetector(valid_wake_word_config)
-        detector._running = True  # Simulate already running
+        detector._provider._running = True  # Simulate already running
         
         with pytest.raises(RuntimeError) as exc_info:
             next(detector.start())
@@ -208,8 +215,8 @@ def test_detector_cannot_start_twice(valid_wake_word_config):
         assert "already running" in str(exc_info.value).lower()
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
-@patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio')
 def test_detector_cleanup_on_stop(
     mock_pyaudio_class,
     mock_pvporcupine,
@@ -217,6 +224,8 @@ def test_detector_cleanup_on_stop(
     mock_porcupine,
 ):
     """Test detector properly cleans up resources on stop."""
+    # Make mock return wake word detection so generator yields
+    mock_porcupine.process.return_value = 0
     mock_pvporcupine.create.return_value = mock_porcupine
     mock_pa_instance = MagicMock()
     mock_stream = MagicMock()
@@ -224,13 +233,13 @@ def test_detector_cleanup_on_stop(
     mock_pa_instance.open.return_value = mock_stream
     
     audio_frame = struct.pack('h' * 512, *([0] * 512))
-    mock_stream.read.side_effect = [audio_frame, Exception("Stop")]
+    mock_stream.read.return_value = audio_frame
     
     detector = WakeWordDetector(valid_wake_word_config)
     
     try:
         gen = detector.start()
-        next(gen)
+        next(gen)  # Get one detection so generator progresses
     except Exception:
         pass
     
@@ -242,10 +251,10 @@ def test_detector_cleanup_on_stop(
     mock_pa_instance.terminate.assert_called_once()
     mock_porcupine.delete.assert_called_once()
     
-    assert detector._running is False
-    assert detector._audio_stream is None
-    assert detector._pa is None
-    assert detector._porcupine is None
+    assert detector._provider._running is False
+    assert detector._provider._audio_stream is None
+    assert detector._provider._pa is None
+    assert detector._provider._porcupine is None
 
 
 def test_detector_stop_is_idempotent(valid_wake_word_config):
@@ -273,10 +282,10 @@ def test_detector_handles_cleanup_errors(valid_wake_word_config):
     mock_porcupine = MagicMock()
     mock_porcupine.delete.side_effect = Exception("Porcupine error")
     
-    detector._audio_stream = mock_stream
-    detector._pa = mock_pa
-    detector._porcupine = mock_porcupine
-    detector._running = True
+    detector._provider._audio_stream = mock_stream
+    detector._provider._pa = mock_pa
+    detector._provider._porcupine = mock_porcupine
+    detector._provider._running = True
     
     # Should not raise despite errors in cleanup
     detector.stop()
@@ -287,13 +296,13 @@ def test_detector_handles_cleanup_errors(valid_wake_word_config):
     mock_porcupine.delete.assert_called_once()
     
     # Resources should be cleared despite errors
-    assert detector._audio_stream is None
-    assert detector._pa is None
-    assert detector._porcupine is None
+    assert detector._provider._audio_stream is None
+    assert detector._provider._pa is None
+    assert detector._provider._porcupine is None
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
-@patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio')
 def test_detector_context_manager(
     mock_pyaudio_class,
     mock_pvporcupine,
@@ -311,7 +320,7 @@ def test_detector_context_manager(
         assert isinstance(detector, WakeWordDetector)
     
     # Verify stop was called on exit (cleanup attempted)
-    assert detector._running is False
+    assert detector._provider._running is False
 
 
 def test_detector_with_custom_model_path():
@@ -322,21 +331,30 @@ def test_detector_with_custom_model_path():
         sensitivity=0.8,
     )
     
-    with patch('sovereign_core.ears.wake_word_detector.pvporcupine') as mock_pv, \
-         patch('sovereign_core.ears.wake_word_detector.pyaudio.PyAudio'):
+    with patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine') as mock_pv, \
+         patch('sovereign_core.ears.providers.porcupine_provider.pyaudio.PyAudio') as mock_pyaudio_class:
         
         mock_porcupine = MagicMock()
         mock_porcupine.sample_rate = 16000
         mock_porcupine.frame_length = 512
+        # Return wake word detection so generator yields
+        mock_porcupine.process.return_value = 0
         mock_pv.create.return_value = mock_porcupine
         
+        # Set up PyAudio mocks
+        mock_pa_instance = MagicMock()
+        mock_stream = MagicMock()
+        mock_pyaudio_class.return_value = mock_pa_instance
+        mock_pa_instance.open.return_value = mock_stream
+        
         audio_frame = struct.pack('h' * 512, *([0] * 512))
+        mock_stream.read.return_value = audio_frame
         
         detector = WakeWordDetector(config)
         
         try:
             gen = detector.start()
-            next(gen)
+            next(gen)  # Get one detection
         except Exception:
             pass
         finally:
@@ -347,7 +365,7 @@ def test_detector_with_custom_model_path():
         assert call_kwargs["model_path"] == "/custom/path/model.pv"
 
 
-@patch('sovereign_core.ears.wake_word_detector.pvporcupine')
+@patch('sovereign_core.ears.providers.porcupine_provider.pvporcupine')
 def test_detector_handles_initialization_failure(
     mock_pvporcupine,
     valid_wake_word_config,

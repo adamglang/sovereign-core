@@ -146,36 +146,20 @@ class SovereignCore:
         # Initialize wake word detector
         logger.info("Initializing wake word detector")
         self.wake_word_detector = WakeWordDetector(
-            access_key=self.config.wake_word.access_key,
-            model_path=self.config.wake_word.model_path,
-            sensitivity=self.config.wake_word.sensitivity,
+            config=self.config.wake_word,
         )
         
         # Initialize audio capture
         logger.info("Initializing audio capture")
-        self.audio_capture = AudioCapture(
-            sample_rate=self.config.audio.sample_rate,
-            channels=self.config.audio.channels,
-            frame_duration_ms=self.config.audio.frame_duration_ms,
-            device_index=self.config.audio.device_index,
-        )
+        self.audio_capture = AudioCapture(config=self.config.audio)
         
         # Initialize speech-to-text
         logger.info(f"Initializing STT with model: {self.config.stt.model_size}")
-        self.stt = SpeechToText(
-            model_size=self.config.stt.model_size,
-            device=self.config.stt.device,
-            compute_type=self.config.stt.compute_type,
-            model_dir=self.config.stt.model_dir,
-        )
+        self.stt = SpeechToText(config=self.config.stt)
         
         # Initialize text-to-speech
         logger.info(f"Initializing TTS with provider: {self.config.tts.provider}")
-        self.tts = TextToSpeech(
-            provider=self.config.tts.provider,
-            voice=self.config.tts.voice,
-            rate=self.config.tts.rate,
-        )
+        self.tts = TextToSpeech(config=self.config.tts)
         
         logger.info("All components initialized")
     
@@ -224,7 +208,7 @@ class SovereignCore:
             try:
                 # Step 1: Listen for wake word
                 logger.info("Listening for wake word...")
-                print("\n🎤 Listening for 'Hey Sovereign'...")
+                print("\n[*] Listening for 'Hey Sovereign'...")
                 
                 wake_detected = self.wake_word_detector.wait_for_wake_word()
                 
@@ -232,24 +216,25 @@ class SovereignCore:
                     continue
                 
                 logger.info("Wake word detected!")
-                print("✅ Wake word detected! Speak now...")
+                print("[+] Wake word detected! Speak now...")
                 
                 # Step 2: Capture user audio
                 logger.info("Capturing audio...")
-                audio_data = self.audio_capture.capture_audio(duration_seconds=5)
+                audio_recording = self.audio_capture.capture(duration=5)
                 
-                if not audio_data:
+                if not audio_recording or not audio_recording.audio_data.size:
                     logger.warning("No audio captured")
                     self.tts.speak("I didn't hear anything. Please try again.")
                     continue
                 
-                logger.debug(f"Captured {len(audio_data)} audio samples")
+                logger.debug(f"Captured {len(audio_recording.audio_data)} audio samples")
                 
                 # Step 3: Transcribe audio to text
                 logger.info("Transcribing audio...")
-                print("🔄 Transcribing...")
+                print("[~] Transcribing...")
                 
-                utterance = self.stt.transcribe(audio_data)
+                transcription_result = self.stt.transcribe(audio_recording)
+                utterance = transcription_result.text
                 
                 if not utterance or utterance.strip() == "":
                     logger.warning("Transcription resulted in empty text")
@@ -257,7 +242,7 @@ class SovereignCore:
                     continue
                 
                 logger.info(f"User said: {utterance}")
-                print(f"💬 You: {utterance}")
+                print(f"[>] You: {utterance}")
                 
                 # Add user utterance to conversation history
                 self.conversation_history.append({
@@ -267,7 +252,7 @@ class SovereignCore:
                 
                 # Step 4: Route to appropriate handler
                 logger.info("Routing request...")
-                print("🧠 Processing...")
+                print("[~] Processing...")
                 
                 router_response = self.router.route(
                     utterance=utterance,
@@ -316,7 +301,7 @@ class SovereignCore:
             except Exception as e:
                 # Log error but keep running
                 logger.error(f"Error in main loop: {str(e)}", exc_info=True)
-                print(f"❌ Error: {str(e)}")
+                print(f"[!] Error: {str(e)}")
                 
                 # Try to inform user and continue
                 try:
@@ -345,7 +330,7 @@ class SovereignCore:
         
         logger.info("Starting Sovereign Core voice assistant")
         print("\n" + "=" * 60)
-        print("🎯 Sovereign Core Voice Assistant")
+        print("*** Sovereign Core Voice Assistant ***")
         print("=" * 60)
         print("\nPress Ctrl+C to stop\n")
         
@@ -366,7 +351,7 @@ class SovereignCore:
             return
         
         logger.info("Stopping Sovereign Core...")
-        print("\n👋 Shutting down gracefully...")
+        print("\n[*] Shutting down gracefully...")
         
         self.running = False
         
@@ -393,7 +378,7 @@ class SovereignCore:
                 logger.error(f"Error cleaning up STT: {e}")
         
         logger.info("Sovereign Core stopped")
-        print("✅ Shutdown complete")
+        print("[+] Shutdown complete")
 
 
 def main():
@@ -404,16 +389,16 @@ def main():
         sovereign.start()
         
     except FileNotFoundError as e:
-        print(f"\n❌ Configuration Error: {str(e)}")
+        print(f"\n[!] Configuration Error: {str(e)}")
         sys.exit(1)
     
     except ValueError as e:
-        print(f"\n❌ Configuration Error: {str(e)}")
+        print(f"\n[!] Configuration Error: {str(e)}")
         sys.exit(1)
     
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}", exc_info=True)
-        print(f"\n❌ Fatal Error: {str(e)}")
+        print(f"\n[!] Fatal Error: {str(e)}")
         sys.exit(1)
 
 
