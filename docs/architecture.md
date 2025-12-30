@@ -139,12 +139,39 @@ Requirements:
 
 ### LLM (Brain)
 
-- Pluggable backend (cloud or local)
+**POC Implementation:**
+- OpenAI API (GPT-5)
 
-Requirements:
+**CRITICAL DESIGN PRINCIPLE: Model Swappability**
+
+The LLM backend MUST be architected for **zero-friction model swapping**.
+
+Swapping from OpenAI to another hosted LLM (Anthropic, Gemini, etc.) or to a local 72B model should require:
+- **One configuration change only:** point to the new model endpoint/path
+- **Zero code changes**
+- **Zero additional configuration**
+
+This is achieved through:
+1. **Abstraction layer:** A unified interface that all LLM backends implement
+2. **Provider adapters:** Thin wrappers that translate the standard interface to provider-specific APIs
+3. **Runtime selection:** Model backend chosen at startup via single config parameter
+
+The abstraction must handle:
+- Message formatting (system/user/assistant)
+- Streaming responses (if provider supports)
+- Temperature and generation parameters
+- Error handling and retry logic
+
+Future model targets include:
+- Local 72B models (post-RTX 5090 upgrade)
+- Other cloud providers (Anthropic Claude, Google Gemini)
+- Self-hosted inference servers (vLLM, TGI)
+
+**Functional Requirements:**
 - Multi-turn conversation
 - Ability to follow strict output instructions
 - Ability to emit structured JSON when explicitly requested
+- Consistent behavior across providers (within model capability limits)
 
 ---
 

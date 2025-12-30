@@ -1,0 +1,1 @@
+"""Ears module - Wake-word detection and audio capture."""

@@ -1,0 +1,82 @@
+# Sovereign Core Configuration
+# Use environment variables for sensitive data like API keys
+
+# Wake-word detection settings
+wake_word:
+  # Picovoice Porcupine access key (set via PORCUPINE_ACCESS_KEY env var)
+  access_key: ${PORCUPINE_ACCESS_KEY}
+  # Path to custom wake word model file (optional)
+  model_path: null
+  # Sensitivity (0.0 to 1.0) - higher means more sensitive but more false positives
+  sensitivity: 0.5
+
+# Audio input settings
+audio:
+  # Sample rate in Hz
+  sample_rate: 16000
+  # Number of audio channels
+  channels: 1
+  # Frame duration in milliseconds
+  frame_duration_ms: 30
+  # Input device index (null = default device)
+  device_index: null
+
+# Speech-to-Text settings
+stt:
+  # faster-whisper model size: tiny, base, small, medium, large-v2, large-v3
+  model_size: "base"
+  # Device: "cuda" for GPU, "cpu" for CPU
+  device: "cpu"
+  # Compute type: "float16" for GPU, "int8" for CPU
+  compute_type: "int8"
+  # Model download/cache directory
+  model_dir: "./models/whisper"
+
+# LLM settings
+llm:
+  # Provider: "openai" (more providers can be added later)
+  # Changing this is the ONLY change needed to swap LLM providers
+  provider: "openai"
+  # Model name (gpt-4o-mini for POC cost efficiency)
+  model: "gpt-4o-mini"
+  # Temperature for response generation (0.0 = deterministic, 1.0 = creative)
+  temperature: 0.7
+  # Max tokens in response
+  max_tokens: 1000
+
+# Text-to-Speech settings
+tts:
+  # Provider: "windows" for Windows native, "piper" for Piper TTS (future)
+  provider: "windows"
+  # Voice name (Windows native voice)
+  voice: null  # Uses system default
+  # Speech rate (0.5 to 2.0, 1.0 is normal)
+  rate: 1.0
+
+# Inter-process communication settings
+ipc:
+  # SQLite database path for IPC
+  database_path: "./sovereign.db"
+  # Connection timeout in seconds
+  timeout: 30
+
+# Routing settings
+router:
+  # Keywords that indicate action requests vs conversation
+  action_keywords:
+    - "execute"
+    - "run"
+    - "start"
+    - "stop"
+    - "open"
+    - "close"
+    - "launch"
+
+# Logging settings
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  # Log file path
+  file: "./logs/sovereign.log"
+  # Console output enabled
+  console: true
