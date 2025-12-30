@@ -8,7 +8,11 @@ import os
 from typing import Any, Optional
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class WakeWordConfig(BaseModel):

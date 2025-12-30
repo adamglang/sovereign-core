@@ -1,71 +1,96 @@
 """
-Wake word detector for Sovereign using Picovoice Porcupine.
+Wake word detector for Sovereign.
 
-Continuously listens for "Hey Sovereign" wake word with low CPU usage.
+This module provides a backward-compatible wrapper around the wake word provider
+abstraction. It delegates to the configured provider (default: Porcupine) while
+maintaining the existing API for seamless migration.
+
+For new code, prefer using the factory directly:
+    from sovereign_core.ears.wake_word_factory import get_wake_word_provider
+    provider = get_wake_word_provider("porcupine", config)
 """
 
 import logging
-import struct
-import threading
-from datetime import datetime
-from typing import Iterator, Optional
-
-import pvporcupine
-import pyaudio
+from typing import Iterator
 
 from ..config import WakeWordConfig
+from .wake_word_factory import get_wake_word_provider
+from .wake_word_interface import WakeWordDetection, WakeWordProvider
 
 logger = logging.getLogger(__name__)
 
 
-class WakeWordDetection:
-    """Wake word detection event."""
-    
-    def __init__(self, detected: bool, confidence: float, timestamp: datetime):
-        """
-        Initialize a wake word detection event.
-        
-        Args:
-            detected: Whether the wake word was detected
-            confidence: Confidence score (0.0 to 1.0)
-            timestamp: When the detection occurred
-        """
-        self.detected = detected
-        self.confidence = confidence
-        self.timestamp = timestamp
-
-
 class WakeWordDetector:
     """
-    Continuously listens for wake word using Picovoice Porcupine.
+    Backward-compatible wake word detector wrapper.
     
-    Runs in a background thread for low CPU usage and non-blocking operation.
-    Yields detection events when wake word is heard.
+    This class maintains the original API while delegating to the pluggable
+    provider system. It automatically selects the appropriate provider based
+    on configuration.
     """
     
-    def __init__(self, config: WakeWordConfig):
+    def __init__(
+        self,
+        config: WakeWordConfig = None,
+        provider_name: str = "porcupine",
+        access_key: str = None,
+        model_path: str = None,
+        sensitivity: float = 0.5,
+    ):
         """
         Initialize the wake word detector.
         
         Args:
-            config: Wake word configuration with access key and model path
+            config: Wake word configuration with access key and model path (preferred)
+            provider_name: Name of the wake word provider to use (default: "porcupine")
+            access_key: Porcupine access key (alternative to config)
+            model_path: Optional path to custom model (alternative to config)
+            sensitivity: Detection sensitivity 0.0-1.0 (alternative to config)
         """
-        self.config = config
-        self._porcupine: Optional[pvporcupine.Porcupine] = None
-        self._audio_stream: Optional[pyaudio.Stream] = None
-        self._pa: Optional[pyaudio.PyAudio] = None
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
+        # Support both new config-based and old parameter-based initialization
+        if config is not None:
+            self.config = config
+            provider_config = {
+                "access_key": config.access_key,
+                "sensitivity": config.sensitivity,
+            }
+            if config.model_path:
+                provider_config["model_path"] = config.model_path
+        else:
+            # Backward compatibility: build config from individual parameters
+            from ..config import WakeWordConfig as WakeWordConfigClass
+            self.config = WakeWordConfigClass(
+                access_key=access_key,
+                model_path=model_path,
+                sensitivity=sensitivity,
+            )
+            provider_config = {
+                "access_key": access_key,
+                "sensitivity": sensitivity,
+            }
+            if model_path:
+                provider_config["model_path"] = model_path
         
-        logger.info("WakeWordDetector initialized")
+        self.provider_name = provider_name
+        
+        # Create the underlying provider
+        self._provider: WakeWordProvider = get_wake_word_provider(
+            provider_name=provider_name,
+            config=provider_config,
+        )
+        
+        self._detection_generator = None
+        
+        logger.info(
+            f"WakeWordDetector initialized with {provider_name} provider"
+        )
     
     def start(self) -> Iterator[WakeWordDetection]:
         """
         Start listening for wake word.
         
-        This method initializes Porcupine and the audio stream, then continuously
-        listens for the wake word in a background thread. It yields detection events
-        when the wake word is detected.
+        Delegates to the underlying provider's start method. Yields detection
+        events when the wake word is detected.
         
         Yields:
             WakeWordDetection: Detection events with confidence scores
@@ -73,123 +98,43 @@ class WakeWordDetector:
         Raises:
             RuntimeError: If detector is already running or initialization fails
         """
-        if self._running:
-            raise RuntimeError("Wake word detector is already running")
+        self._detection_generator = self._provider.start()
+        return self._detection_generator
+    
+    def wait_for_wake_word(self) -> bool:
+        """
+        Wait for a single wake word detection (blocking).
         
+        Backward-compatible method that blocks until a wake word is detected.
+        
+        Returns:
+            bool: True if wake word detected, False otherwise
+        """
         try:
-            # Initialize Porcupine
-            logger.info("Initializing Porcupine wake word engine")
+            if self._detection_generator is None:
+                self._detection_generator = self._provider.start()
             
-            porcupine_kwargs = {
-                "access_key": self.config.access_key,
-                "keywords": ["hey sovereign"],
-                "sensitivities": [self.config.sensitivity],
-            }
-            
-            if self.config.model_path:
-                porcupine_kwargs["model_path"] = self.config.model_path
-            
-            self._porcupine = pvporcupine.create(**porcupine_kwargs)
-            
-            logger.info(
-                f"Porcupine initialized (sample_rate={self._porcupine.sample_rate}, "
-                f"frame_length={self._porcupine.frame_length})"
-            )
-            
-            # Initialize PyAudio
-            self._pa = pyaudio.PyAudio()
-            
-            self._audio_stream = self._pa.open(
-                rate=self._porcupine.sample_rate,
-                channels=1,
-                format=pyaudio.paInt16,
-                input=True,
-                frames_per_buffer=self._porcupine.frame_length,
-            )
-            
-            logger.info("Audio stream opened")
-            
-            self._running = True
-            
-            # Yield detection events as they occur
-            while self._running:
-                try:
-                    pcm = self._audio_stream.read(
-                        self._porcupine.frame_length,
-                        exception_on_overflow=False,
-                    )
-                    pcm = struct.unpack_from(
-                        "h" * self._porcupine.frame_length,
-                        pcm,
-                    )
-                    
-                    keyword_index = self._porcupine.process(pcm)
-                    
-                    if keyword_index >= 0:
-                        timestamp = datetime.now()
-                        confidence = self.config.sensitivity
-                        
-                        logger.info(
-                            f"Wake word detected (confidence={confidence:.2f}, "
-                            f"timestamp={timestamp.isoformat()})"
-                        )
-                        
-                        yield WakeWordDetection(
-                            detected=True,
-                            confidence=confidence,
-                            timestamp=timestamp,
-                        )
-                
-                except Exception as e:
-                    if self._running:
-                        logger.error(f"Error processing audio frame: {e}")
-                        continue
-            
+            detection = next(self._detection_generator)
+            return detection.detected
+        except StopIteration:
+            return False
         except Exception as e:
-            logger.error(f"Failed to start wake word detector: {e}")
-            self.stop()
-            raise RuntimeError(f"Wake word detector initialization failed: {e}")
+            logger.error(f"Error waiting for wake word: {e}")
+            return False
+    
+    def cleanup(self) -> None:
+        """
+        Clean up resources (backward-compatible alias for stop).
+        """
+        self.stop()
     
     def stop(self) -> None:
         """
         Stop listening for wake word and clean up resources.
         
-        This method safely terminates the audio stream and releases Porcupine
-        resources. It can be called multiple times safely.
+        Delegates to the underlying provider's stop method.
         """
-        logger.info("Stopping wake word detector")
-        
-        self._running = False
-        
-        if self._audio_stream is not None:
-            try:
-                self._audio_stream.stop_stream()
-                self._audio_stream.close()
-                logger.debug("Audio stream closed")
-            except Exception as e:
-                logger.warning(f"Error closing audio stream: {e}")
-            finally:
-                self._audio_stream = None
-        
-        if self._pa is not None:
-            try:
-                self._pa.terminate()
-                logger.debug("PyAudio terminated")
-            except Exception as e:
-                logger.warning(f"Error terminating PyAudio: {e}")
-            finally:
-                self._pa = None
-        
-        if self._porcupine is not None:
-            try:
-                self._porcupine.delete()
-                logger.debug("Porcupine engine deleted")
-            except Exception as e:
-                logger.warning(f"Error deleting Porcupine instance: {e}")
-            finally:
-                self._porcupine = None
-        
-        logger.info("Wake word detector stopped")
+        self._provider.stop()
     
     def __enter__(self):
         """Context manager entry."""
