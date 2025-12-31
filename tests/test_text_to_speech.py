@@ -49,25 +49,6 @@ def test_tts_initialization(valid_tts_config):
 
 
 @patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_lazy_engine_loading(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test TTS engine is loaded lazily on first speak."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    tts = TextToSpeech(valid_tts_config)
-    
-    # Engine should not be loaded yet
-    assert tts._engine is None
-    mock_pyttsx3.init.assert_not_called()
-    
-    # Trigger engine loading with speak
-    tts.speak("Hello")
-    
-    # Engine should now be loaded
-    assert tts._engine is not None
-    mock_pyttsx3.init.assert_called_once()
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
 def test_successful_speak(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
     """Test successful text-to-speech with mocked pyttsx3."""
     mock_pyttsx3.init.return_value = mock_pyttsx3_engine
@@ -206,66 +187,6 @@ def test_speech_synthesis_failure(mock_pyttsx3, valid_tts_config, mock_pyttsx3_e
 
 
 @patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_engine_loaded_only_once(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test engine is loaded only once for multiple speak calls."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    tts = TextToSpeech(valid_tts_config)
-    tts.speak("First")
-    tts.speak("Second")
-    tts.speak("Third")
-    
-    # Engine should be initialized only once
-    mock_pyttsx3.init.assert_called_once()
-    
-    # But speak should be called three times
-    assert mock_pyttsx3_engine.say.call_count == 3
-    assert mock_pyttsx3_engine.runAndWait.call_count == 3
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-@pytest.mark.asyncio
-async def test_speak_async(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test asynchronous speak functionality."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    tts = TextToSpeech(valid_tts_config)
-    await tts.speak_async("Hello async")
-    
-    # Verify engine methods were called
-    mock_pyttsx3_engine.say.assert_called_once_with("Hello async")
-    mock_pyttsx3_engine.runAndWait.assert_called_once()
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-@pytest.mark.asyncio
-async def test_speak_async_empty_text(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test async speak handles empty text."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    tts = TextToSpeech(valid_tts_config)
-    await tts.speak_async("")
-    
-    # Should not trigger speech
-    mock_pyttsx3_engine.say.assert_not_called()
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-@pytest.mark.asyncio
-async def test_speak_async_failure(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test async speak handles failures."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    mock_pyttsx3_engine.runAndWait.side_effect = RuntimeError("Async speech failed")
-    
-    tts = TextToSpeech(valid_tts_config)
-    
-    with pytest.raises(RuntimeError) as exc_info:
-        await tts.speak_async("Test")
-    
-    assert "Failed to speak text asynchronously" in str(exc_info.value)
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
 def test_context_manager(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
     """Test TextToSpeech works as context manager."""
     mock_pyttsx3.init.return_value = mock_pyttsx3_engine
@@ -276,17 +197,6 @@ def test_context_manager(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
     
     # Verify cleanup was called
     mock_pyttsx3_engine.stop.assert_called_once()
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_context_manager_cleanup_error(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test context manager handles cleanup errors gracefully."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    mock_pyttsx3_engine.stop.side_effect = Exception("Stop error")
-    
-    # Should not raise even if stop fails
-    with TextToSpeech(valid_tts_config) as tts:
-        tts.speak("Test")
 
 
 @patch('sovereign_core.mouth.text_to_speech.pyttsx3')

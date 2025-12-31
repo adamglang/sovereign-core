@@ -20,6 +20,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import signal
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -74,6 +75,7 @@ class SovereignCore:
         # State
         self.running = False
         self.conversation_history = []
+        self.last_response_time: Optional[float] = None
         
         # Initialize all components
         self._initialize_components()
@@ -203,13 +205,16 @@ class SovereignCore:
         max_messages = self.config.conversation.max_history_messages
         if len(self.conversation_history) > max_messages:
             self.conversation_history = self.conversation_history[-max_messages:]
+        
+        # Record response time for follow-up window
+        self.last_response_time = time.time()
     
     def main_loop(self) -> None:
         """
         Main processing loop for the voice assistant.
         
         Flow:
-        1. Wait for wake word
+        1. Wait for wake word (or skip if within follow-up window)
         2. Capture user audio
         3. Transcribe to text
         4. Route to appropriate handler
@@ -228,24 +233,44 @@ class SovereignCore:
         
         while self.running:
             try:
-                # Step 1: Wait for wake word (blocks until detected)
-                wake_detected = self.wake_word_detector.wait_for_wake_word()
+                # Step 1: Check if we're in follow-up window, otherwise wait for wake word
+                follow_up_timeout = self.config.conversation.follow_up_timeout_seconds
+                in_follow_up_window = False
                 
-                if not wake_detected:
+                if follow_up_timeout > 0 and self.last_response_time is not None:
+                    elapsed = time.time() - self.last_response_time
+                    if elapsed < follow_up_timeout:
+                        in_follow_up_window = True
+                        remaining = follow_up_timeout - elapsed
+                        logger.info(
+                            f"In follow-up window ({remaining:.1f}s remaining), "
+                            f"skipping wake word detection"
+                        )
+                        print(f"[*] Listening for follow-up (wake word not required, {remaining:.1f}s remaining)...")
+                
+                if not in_follow_up_window:
+                    # Wait for wake word (blocks until detected)
+                    wake_detected = self.wake_word_detector.wait_for_wake_word()
+                    
+                    if not wake_detected:
+                        if not self.running:
+                            break
+                        # If wake_detected is False but we're still running, something is wrong
+                        logger.error("Wake word detector returned False - this should block!")
+                        logger.error("This usually means the wake word detector failed to start properly")
+                        print("[!] Wake word detector error - check logs for details")
+                        self.tts.speak("The wake word detector encountered an error.")
+                        break
+                    
                     if not self.running:
                         break
-                    # If wake_detected is False but we're still running, something is wrong
-                    logger.error("Wake word detector returned False - this should block!")
-                    logger.error("This usually means the wake word detector failed to start properly")
-                    print("[!] Wake word detector error - check logs for details")
-                    self.tts.speak("The wake word detector encountered an error.")
-                    break
-                
-                if not self.running:
-                    break
-                
-                logger.info("Wake word detected!")
-                print("[+] Wake word detected! Speak now...")
+                    
+                    logger.info("Wake word detected!")
+                    print("[+] Wake word detected! Speak now...")
+                else:
+                    # In follow-up window, proceed directly to audio capture
+                    if not self.running:
+                        break
                 
                 # Step 2: Capture user audio
                 logger.info("Capturing audio...")
@@ -322,9 +347,20 @@ class SovereignCore:
                     response_text = "I encountered an error processing that request."
                     self._handle_response(response_text)
                 
-                # After processing, resume listening
-                logger.info("Listening for wake word...")
-                print("\n[*] Listening for 'Hey Sovereign'...")
+                # After processing, check if we're still in follow-up window
+                follow_up_timeout = self.config.conversation.follow_up_timeout_seconds
+                if follow_up_timeout > 0 and self.last_response_time is not None:
+                    elapsed = time.time() - self.last_response_time
+                    if elapsed < follow_up_timeout:
+                        remaining = follow_up_timeout - elapsed
+                        logger.info(f"Follow-up window active ({remaining:.1f}s remaining)")
+                        print(f"\n[*] Listening for follow-up (wake word not required, {remaining:.1f}s remaining)...")
+                    else:
+                        logger.info("Listening for wake word...")
+                        print("\n[*] Listening for 'Hey Sovereign'...")
+                else:
+                    logger.info("Listening for wake word...")
+                    print("\n[*] Listening for 'Hey Sovereign'...")
                 
             except KeyboardInterrupt:
                 # Handle Ctrl+C gracefully
@@ -344,9 +380,20 @@ class SovereignCore:
                 except Exception as tts_error:
                     logger.error(f"Failed to speak error message: {str(tts_error)}")
                 
-                # Resume listening after error
-                logger.info("Listening for wake word...")
-                print("\n[*] Listening for 'Hey Sovereign'...")
+                # Resume listening - check follow-up window
+                follow_up_timeout = self.config.conversation.follow_up_timeout_seconds
+                if follow_up_timeout > 0 and self.last_response_time is not None:
+                    elapsed = time.time() - self.last_response_time
+                    if elapsed < follow_up_timeout:
+                        remaining = follow_up_timeout - elapsed
+                        logger.info(f"Follow-up window active ({remaining:.1f}s remaining)")
+                        print(f"\n[*] Listening for follow-up (wake word not required, {remaining:.1f}s remaining)...")
+                    else:
+                        logger.info("Listening for wake word...")
+                        print("\n[*] Listening for 'Hey Sovereign'...")
+                else:
+                    logger.info("Listening for wake word...")
+                    print("\n[*] Listening for 'Hey Sovereign'...")
         
         logger.info("Exited main loop")
     

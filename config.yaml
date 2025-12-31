@@ -80,6 +80,9 @@ conversation:
   max_history_messages: 10
   # Number of messages to pass as context to LLM
   context_messages: 10
+  # Time in seconds to continue listening for follow-up input without requiring wake word
+  # Set to 0 to always require wake word
+  follow_up_timeout_seconds: 10.0
 
 # Logging settings
 logging:
