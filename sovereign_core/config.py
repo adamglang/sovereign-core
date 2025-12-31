@@ -19,7 +19,8 @@ class WakeWordConfig(BaseModel):
     """Wake word detection configuration."""
 
     access_key: str
-    model_path: Optional[str] = None
+    keywords: list[str] = Field(default=["hey sovereign"])
+    keyword_path: Optional[str] = None
     sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
@@ -71,6 +72,13 @@ class RouterConfig(BaseModel):
     action_keywords: list[str] = Field(default_factory=list)
 
 
+class ConversationConfig(BaseModel):
+    """Conversation history configuration."""
+
+    max_history_messages: int = Field(default=10, ge=1)
+    context_messages: int = Field(default=10, ge=1)
+
+
 class LoggingConfig(BaseModel):
     """Logging configuration."""
 
@@ -97,6 +105,7 @@ class SovereignConfig(BaseModel):
     tts: TTSConfig
     ipc: IPCConfig
     router: RouterConfig
+    conversation: ConversationConfig
     logging: LoggingConfig
 
 

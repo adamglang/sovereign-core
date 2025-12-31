@@ -60,11 +60,21 @@ def get_wake_word_provider(
                 "Get your key from https://console.picovoice.ai/"
             )
         
+        # Keywords are optional if custom keyword_path is provided
+        keywords = config.get("keywords")
+        keyword_path = config.get("keyword_path")
+        
+        if not keywords and not keyword_path:
+            raise ValueError(
+                "Porcupine provider requires either 'keywords' or 'keyword_path' in config. "
+                "Specify built-in keywords (e.g., ['picovoice']) or path to custom .ppn file."
+            )
+        
         return PorcupineProvider(
             access_key=access_key,
-            keywords=config.get("keywords", ["hey sovereign"]),
+            keywords=keywords,
             sensitivity=config.get("sensitivity", 0.5),
-            model_path=config.get("model_path"),
+            keyword_path=keyword_path,
         )
     
     # Future provider implementations:

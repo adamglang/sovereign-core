@@ -31,16 +31,16 @@ class PorcupineProvider(WakeWordProvider):
         access_key: str,
         keywords: list[str] | None = None,
         sensitivity: float = 0.5,
-        model_path: str | None = None,
+        keyword_path: str | None = None,
     ):
         """
         Initialize the Porcupine provider.
         
         Args:
             access_key: Picovoice access key for authentication
-            keywords: List of wake word keywords (default: ["hey sovereign"])
+            keywords: List of built-in wake word keywords (set via config)
             sensitivity: Detection sensitivity 0.0-1.0 (default: 0.5)
-            model_path: Optional path to custom Porcupine model file
+            keyword_path: Optional path to custom .ppn wake word file
         
         Raises:
             ValueError: If access_key is not provided
@@ -52,16 +52,19 @@ class PorcupineProvider(WakeWordProvider):
             )
         
         self.access_key = access_key
-        self.keywords = keywords or ["hey sovereign"]
+        self.keywords = keywords
         self.sensitivity = sensitivity
-        self.model_path = model_path
+        self.keyword_path = keyword_path
         
         self._porcupine: Optional[pvporcupine.Porcupine] = None
         self._audio_stream: Optional[pyaudio.Stream] = None
         self._pa: Optional[pyaudio.PyAudio] = None
         self._running = False
         
-        logger.info(f"Initialized Porcupine provider with keywords: {self.keywords}")
+        if self.keyword_path:
+            logger.info(f"Initialized Porcupine provider with custom wake word: {self.keyword_path}")
+        else:
+            logger.info(f"Initialized Porcupine provider with built-in keywords: {self.keywords}")
     
     def start(self) -> Iterator[WakeWordDetection]:
         """
@@ -81,21 +84,24 @@ class PorcupineProvider(WakeWordProvider):
             raise RuntimeError("Wake word detector is already running")
         
         try:
-            # Initialize Porcupine
-            logger.info("Initializing Porcupine wake word engine")
+            # Initialize Porcupine (log at debug level to avoid spam)
+            logger.debug("Initializing Porcupine wake word engine")
             
             porcupine_kwargs = {
                 "access_key": self.access_key,
-                "keywords": self.keywords,
-                "sensitivities": [self.sensitivity] * len(self.keywords),
             }
             
-            if self.model_path:
-                porcupine_kwargs["model_path"] = self.model_path
+            # Use custom .ppn file if provided, otherwise use built-in keywords
+            if self.keyword_path:
+                porcupine_kwargs["keyword_paths"] = [self.keyword_path]
+                porcupine_kwargs["sensitivities"] = [self.sensitivity]
+            else:
+                porcupine_kwargs["keywords"] = self.keywords
+                porcupine_kwargs["sensitivities"] = [self.sensitivity] * len(self.keywords)
             
             self._porcupine = pvporcupine.create(**porcupine_kwargs)
             
-            logger.info(
+            logger.debug(
                 f"Porcupine initialized (sample_rate={self._porcupine.sample_rate}, "
                 f"frame_length={self._porcupine.frame_length})"
             )
@@ -111,7 +117,7 @@ class PorcupineProvider(WakeWordProvider):
                 frames_per_buffer=self._porcupine.frame_length,
             )
             
-            logger.info("Audio stream opened")
+            logger.info("Porcupine wake word detector started and listening")
             
             self._running = True
             
@@ -133,8 +139,14 @@ class PorcupineProvider(WakeWordProvider):
                         timestamp = datetime.now()
                         confidence = self.sensitivity
                         
+                        # Get keyword name for logging
+                        if self.keyword_path:
+                            keyword_name = f"custom wake word ({self.keyword_path})"
+                        else:
+                            keyword_name = self.keywords[keyword_index]
+                        
                         logger.info(
-                            f"Wake word detected (keyword={self.keywords[keyword_index]}, "
+                            f"Wake word detected (keyword={keyword_name}, "
                             f"confidence={confidence:.2f}, "
                             f"timestamp={timestamp.isoformat()})"
                         )

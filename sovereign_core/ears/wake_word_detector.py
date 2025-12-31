@@ -52,24 +52,26 @@ class WakeWordDetector:
             self.config = config
             provider_config = {
                 "access_key": config.access_key,
+                "keywords": config.keywords,
                 "sensitivity": config.sensitivity,
             }
-            if config.model_path:
-                provider_config["model_path"] = config.model_path
+            if hasattr(config, 'keyword_path') and config.keyword_path:
+                provider_config["keyword_path"] = config.keyword_path
         else:
             # Backward compatibility: build config from individual parameters
             from ..config import WakeWordConfig as WakeWordConfigClass
             self.config = WakeWordConfigClass(
                 access_key=access_key,
-                model_path=model_path,
+                keyword_path=model_path,
                 sensitivity=sensitivity,
             )
             provider_config = {
                 "access_key": access_key,
+                "keywords": self.config.keywords,
                 "sensitivity": sensitivity,
             }
             if model_path:
-                provider_config["model_path"] = model_path
+                provider_config["keyword_path"] = model_path
         
         self.provider_name = provider_name
         
@@ -117,9 +119,12 @@ class WakeWordDetector:
             detection = next(self._detection_generator)
             return detection.detected
         except StopIteration:
+            logger.warning("Wake word detector generator stopped unexpectedly")
+            self._detection_generator = None
             return False
         except Exception as e:
-            logger.error(f"Error waiting for wake word: {e}")
+            logger.error(f"Error waiting for wake word: {e}", exc_info=True)
+            self._detection_generator = None
             return False
     
     def cleanup(self) -> None:

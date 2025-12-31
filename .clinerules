@@ -145,6 +145,55 @@ Prefer self-explanatory code: descriptive names, small functions, strong TypeScr
 
 **Exception:** If a decision is truly irreversible (database choice, foundational architecture), invest appropriate planning time. But these are rarer than they seem.
 
+### 7) Configurable primitives mandate (centralize behavioral dials incrementally)
+**Primitive values that control UX or system behavior should live in a centralized configuration layer, not scattered as magic numbers throughout the codebase.** This enables future UI-driven configuration and easier tuning without hunting through code.
+
+**Core principle:** Make meaningful behavioral dials discoverable and changeable from a single source of truth, but do so incrementally—only for values we're actually using or clearly will use soon.
+
+**⚠️ RULE 6 OVERRIDE:** If there's any tension between this rule and the Evolving Architecture Mandate (Rule 6), **Rule 6 wins**. Do not build elaborate configuration systems prematurely.
+
+**What qualifies as a configurable primitive:**
+- **UX parameters:** Token limits, response timeouts, retry attempts, debounce delays, animation durations
+- **System behavior:** Logging levels, verbosity settings, polling intervals, cache TTLs, batch sizes
+- **AI/ML settings:** Model names, temperature, max tokens, voice types, wake word sensitivity
+- **Thresholds:** Confidence scores, rate limits, queue depths, memory thresholds
+
+**What does NOT qualify:**
+- Mathematical constants (π, conversion factors)
+- Protocol-defined values (HTTP status codes, standard ports)
+- Arbitrary implementation details that don't affect observable behavior
+- Values that appear once and have no foreseeable reason to change
+
+**Operational rules:**
+- **Centralize incrementally:** Move a primitive to config only when you're actively working with it or it clearly affects user-facing behavior
+- **Use existing config patterns:** Scan for [`config.py`](sovereign_core/config.py), [`config.yaml`](config.yaml), environment variables, or settings modules already in the repo. Align with what exists.
+- **Name descriptively:** Config keys should be self-documenting (e.g., `max_retry_attempts`, `llm_response_timeout_seconds`, `voice_type`)
+- **Provide defaults:** Always include sensible defaults so the system works out-of-the-box
+- **Don't create duplicates:** If a value is already configurable somewhere, use that mechanism. Don't create parallel config sources.
+
+**Red flags that indicate over-configuring:**
+- Making every constant in a module configurable "just in case"
+- Building multi-layer config systems (global → environment → user → runtime) before you need them
+- Creating config schemas with validation for hypothetical future settings
+- Extracting implementation details that have zero user/system impact
+
+**When you catch yourself over-configuring:**
+1. **ASK:** "Is this value actually a behavioral dial users/operators will want to adjust?"
+2. **CHECK:** "Are we using this now, or will we clearly need to tune it in the next 1-2 steps?"
+3. **If NO to both:** Leave it as a well-named constant in the module where it's used
+4. **If YES:** Add it to the existing config layer with a descriptive name and default
+
+**Practical examples:**
+- ✅ `llm_temperature: float = 0.7` in config → ❌ Hard-coded `0.7` in every LLM call
+- ✅ `wake_word_sensitivity: float = 0.5` in config → ❌ Magic number in wake word detector
+- ✅ `max_audio_duration_seconds: int = 30` in config → ❌ Hard-coded `30` scattered across audio processing
+- ❌ `BYTES_PER_SAMPLE = 2` in config when it's part of audio format specification → ✅ Leave as constant in module
+
+**Enforcement:**
+- Before hard-coding a primitive that affects UX/behavior, ask: "Should this be configurable?"
+- Before adding to config, ask: "Do we actually need to change this, or am I over-architecting?"
+- When refactoring, consolidate scattered magic numbers into config if they meet the criteria above
+
 ## Enforcement Heuristic
 **If a proposed change creates a duplicate or conflicting pattern, stop and propose consolidation or a refactor plan instead.**
 

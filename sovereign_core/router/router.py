@@ -37,6 +37,7 @@ class Router:
         llm_provider: LLMProvider,
         db_path: str,
         action_keywords: List[str],
+        context_messages: int = 10,
     ):
         """
         Initialize the Router.
@@ -45,10 +46,12 @@ class Router:
             llm_provider: LLM provider instance for all routing tasks
             db_path: Path to IPC database for writing action commands
             action_keywords: List of keywords that indicate action requests
+            context_messages: Number of conversation messages to pass as context
         """
         self.llm_provider = llm_provider
         self.db_path = db_path
         self.action_keywords = action_keywords
+        self.context_messages = context_messages
         
         logger.info("Router initialized")
     
@@ -127,7 +130,7 @@ class Router:
         """
         logger.debug("Handling conversational intent")
         
-        system_prompt = get_conversational_prompt(conversation_history)
+        system_prompt = get_conversational_prompt(conversation_history, self.context_messages)
         
         messages = [
             {"role": "system", "content": system_prompt},

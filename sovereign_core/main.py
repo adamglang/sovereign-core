@@ -17,7 +17,6 @@ and graceful shutdown.
 """
 
 import logging
-import os
 import signal
 import sys
 from pathlib import Path
@@ -141,6 +140,7 @@ class SovereignCore:
             llm_provider=llm_provider,
             db_path=self.config.ipc.database_path,
             action_keywords=self.config.router.action_keywords,
+            context_messages=self.config.conversation.context_messages,
         )
         
         # Initialize wake word detector
@@ -182,9 +182,10 @@ class SovereignCore:
             "content": response_text,
         })
         
-        # Keep history manageable (last 10 exchanges)
-        if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
+        # Keep history manageable
+        max_messages = self.config.conversation.max_history_messages
+        if len(self.conversation_history) > max_messages:
+            self.conversation_history = self.conversation_history[-max_messages:]
     
     def main_loop(self) -> None:
         """
@@ -204,16 +205,27 @@ class SovereignCore:
         """
         logger.info("Entering main loop")
         
+        # Log once before entering the loop
+        logger.info("Listening for wake word...")
+        print("\n[*] Listening for 'Hey Sovereign'...")
+        
         while self.running:
             try:
-                # Step 1: Listen for wake word
-                logger.info("Listening for wake word...")
-                print("\n[*] Listening for 'Hey Sovereign'...")
-                
+                # Step 1: Wait for wake word (blocks until detected)
                 wake_detected = self.wake_word_detector.wait_for_wake_word()
                 
-                if not wake_detected or not self.running:
-                    continue
+                if not wake_detected:
+                    if not self.running:
+                        break
+                    # If wake_detected is False but we're still running, something is wrong
+                    logger.error("Wake word detector returned False - this should block!")
+                    logger.error("This usually means the wake word detector failed to start properly")
+                    print("[!] Wake word detector error - check logs for details")
+                    self.tts.speak("The wake word detector encountered an error.")
+                    break
+                
+                if not self.running:
+                    break
                 
                 logger.info("Wake word detected!")
                 print("[+] Wake word detected! Speak now...")
@@ -293,6 +305,10 @@ class SovereignCore:
                     response_text = "I encountered an error processing that request."
                     self._handle_response(response_text)
                 
+                # After processing, resume listening
+                logger.info("Listening for wake word...")
+                print("\n[*] Listening for 'Hey Sovereign'...")
+                
             except KeyboardInterrupt:
                 # Handle Ctrl+C gracefully
                 logger.info("Keyboard interrupt received")
@@ -310,6 +326,10 @@ class SovereignCore:
                     )
                 except Exception as tts_error:
                     logger.error(f"Failed to speak error message: {str(tts_error)}")
+                
+                # Resume listening after error
+                logger.info("Listening for wake word...")
+                print("\n[*] Listening for 'Hey Sovereign'...")
         
         logger.info("Exited main loop")
     

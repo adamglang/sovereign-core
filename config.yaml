@@ -5,8 +5,10 @@
 wake_word:
   # Picovoice Porcupine access key (set via PORCUPINE_ACCESS_KEY env var)
   access_key: ${PORCUPINE_ACCESS_KEY}
-  # Path to custom wake word model file (optional)
-  model_path: null
+  # Wake word keywords to listen for (not used when keyword_path is set)
+  keywords: ["hey sovereign"]
+  # Path to custom wake word .ppn file (optional - uses built-in keywords if not provided)
+  keyword_path: "sovereign_core/assets/wake_words/hey-sovereign_en_windows_v4_0_0.ppn"
   # Sensitivity (0.0 to 1.0) - higher means more sensitive but more false positives
   sensitivity: 0.5
 
@@ -71,6 +73,13 @@ router:
     - "open"
     - "close"
     - "launch"
+
+# Conversation history settings
+conversation:
+  # Maximum number of messages to store in conversation history
+  max_history_messages: 10
+  # Number of messages to pass as context to LLM
+  context_messages: 10
 
 # Logging settings
 logging:

@@ -211,3 +211,6 @@ __marimo__/
 
 # Sovereign database
 sovereign.db
+
+# ML Model cache
+models/
