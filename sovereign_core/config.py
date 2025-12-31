@@ -85,8 +85,12 @@ class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: str = "./logs/sovereign.log"
     console: bool = True
+    max_bytes: int = Field(default=10_485_760)
+    backup_count: int = Field(default=5)
+    third_party_level: str = Field(default="WARNING")
+    third_party_loggers: list[str] = Field(default_factory=list)
 
-    @field_validator("level")
+    @field_validator("level", "third_party_level")
     @classmethod
     def validate_level(cls, v: str) -> str:
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}

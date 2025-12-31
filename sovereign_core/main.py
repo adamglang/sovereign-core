@@ -17,6 +17,7 @@ and graceful shutdown.
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 import signal
 import sys
 from pathlib import Path
@@ -94,8 +95,13 @@ class SovereignCore:
         # Clear existing handlers
         root_logger.handlers.clear()
         
-        # File handler
-        file_handler = logging.FileHandler(log_config.file, encoding="utf-8")
+        # File handler with rotation
+        file_handler = RotatingFileHandler(
+            log_config.file,
+            maxBytes=log_config.max_bytes,
+            backupCount=log_config.backup_count,
+            encoding="utf-8"
+        )
         file_handler.setLevel(log_config.level)
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -113,7 +119,18 @@ class SovereignCore:
             console_handler.setFormatter(console_formatter)
             root_logger.addHandler(console_handler)
         
-        logger.info(f"Logging configured: level={log_config.level}, file={log_config.file}")
+        # Filter third-party libraries to prevent log bloat
+        third_party_level = getattr(logging, log_config.third_party_level)
+        
+        for logger_name in log_config.third_party_loggers:
+            logging.getLogger(logger_name).setLevel(third_party_level)
+        
+        logger.info(
+            f"Logging configured: level={log_config.level}, file={log_config.file}, "
+            f"max_size={log_config.max_bytes / 1_048_576:.1f}MB, "
+            f"backups={log_config.backup_count}, third_party_level={log_config.third_party_level}, "
+            f"third_party_loggers={len(log_config.third_party_loggers)}"
+        )
     
     def _initialize_components(self) -> None:
         """Initialize all voice assistant components in correct order."""
