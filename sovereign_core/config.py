@@ -19,6 +19,7 @@ class WakeWordConfig(BaseModel):
     """Wake word detection configuration."""
 
     access_key: str
+    keywords: list[str] = Field(default=["hey sovereign"])
     model_path: Optional[str] = None
     sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
 

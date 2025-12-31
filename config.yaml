@@ -5,6 +5,8 @@
 wake_word:
   # Picovoice Porcupine access key (set via PORCUPINE_ACCESS_KEY env var)
   access_key: ${PORCUPINE_ACCESS_KEY}
+  # Wake word keywords to listen for
+  keywords: ["hey sovereign"]
   # Path to custom wake word model file (optional)
   model_path: null
   # Sensitivity (0.0 to 1.0) - higher means more sensitive but more false positives

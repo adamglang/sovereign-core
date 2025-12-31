@@ -60,9 +60,16 @@ def get_wake_word_provider(
                 "Get your key from https://console.picovoice.ai/"
             )
         
+        keywords = config.get("keywords")
+        if not keywords:
+            raise ValueError(
+                "Porcupine provider requires 'keywords' in config. "
+                "Specify wake word keywords (e.g., ['hey sovereign'])."
+            )
+        
         return PorcupineProvider(
             access_key=access_key,
-            keywords=config.get("keywords", ["hey sovereign"]),
+            keywords=keywords,
             sensitivity=config.get("sensitivity", 0.5),
             model_path=config.get("model_path"),
         )

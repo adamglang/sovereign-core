@@ -29,7 +29,7 @@ class PorcupineProvider(WakeWordProvider):
     def __init__(
         self,
         access_key: str,
-        keywords: list[str] | None = None,
+        keywords: list[str],
         sensitivity: float = 0.5,
         model_path: str | None = None,
     ):
@@ -38,12 +38,12 @@ class PorcupineProvider(WakeWordProvider):
         
         Args:
             access_key: Picovoice access key for authentication
-            keywords: List of wake word keywords (default: ["hey sovereign"])
+            keywords: List of wake word keywords (required)
             sensitivity: Detection sensitivity 0.0-1.0 (default: 0.5)
             model_path: Optional path to custom Porcupine model file
         
         Raises:
-            ValueError: If access_key is not provided
+            ValueError: If access_key is not provided or keywords is empty
         """
         if not access_key:
             raise ValueError(
@@ -51,8 +51,11 @@ class PorcupineProvider(WakeWordProvider):
                 "Get your key from https://console.picovoice.ai/"
             )
         
+        if not keywords:
+            raise ValueError("At least one wake word keyword must be provided")
+        
         self.access_key = access_key
-        self.keywords = keywords or ["hey sovereign"]
+        self.keywords = keywords
         self.sensitivity = sensitivity
         self.model_path = model_path
         
@@ -81,8 +84,8 @@ class PorcupineProvider(WakeWordProvider):
             raise RuntimeError("Wake word detector is already running")
         
         try:
-            # Initialize Porcupine
-            logger.info("Initializing Porcupine wake word engine")
+            # Initialize Porcupine (log at debug level to avoid spam)
+            logger.debug("Initializing Porcupine wake word engine")
             
             porcupine_kwargs = {
                 "access_key": self.access_key,
@@ -95,7 +98,7 @@ class PorcupineProvider(WakeWordProvider):
             
             self._porcupine = pvporcupine.create(**porcupine_kwargs)
             
-            logger.info(
+            logger.debug(
                 f"Porcupine initialized (sample_rate={self._porcupine.sample_rate}, "
                 f"frame_length={self._porcupine.frame_length})"
             )
@@ -111,7 +114,7 @@ class PorcupineProvider(WakeWordProvider):
                 frames_per_buffer=self._porcupine.frame_length,
             )
             
-            logger.info("Audio stream opened")
+            logger.info("Porcupine wake word detector started and listening")
             
             self._running = True
             

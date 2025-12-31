@@ -52,6 +52,7 @@ class WakeWordDetector:
             self.config = config
             provider_config = {
                 "access_key": config.access_key,
+                "keywords": config.keywords,
                 "sensitivity": config.sensitivity,
             }
             if config.model_path:
@@ -66,6 +67,7 @@ class WakeWordDetector:
             )
             provider_config = {
                 "access_key": access_key,
+                "keywords": self.config.keywords,
                 "sensitivity": sensitivity,
             }
             if model_path:
@@ -117,9 +119,12 @@ class WakeWordDetector:
             detection = next(self._detection_generator)
             return detection.detected
         except StopIteration:
+            logger.warning("Wake word detector generator stopped unexpectedly")
+            self._detection_generator = None
             return False
         except Exception as e:
-            logger.error(f"Error waiting for wake word: {e}")
+            logger.error(f"Error waiting for wake word: {e}", exc_info=True)
+            self._detection_generator = None
             return False
     
     def cleanup(self) -> None:
