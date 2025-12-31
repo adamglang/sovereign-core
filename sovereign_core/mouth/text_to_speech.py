@@ -130,6 +130,14 @@ class TextToSpeech:
             # synthesis and audio playback logic
             self._engine.runAndWait()
             
+            # CRITICAL FIX: On Windows, pyttsx3/SAPI5 leaves the engine in a bad state
+            # after the first runAndWait() call, causing subsequent calls to silently fail.
+            # Stopping and reinitializing the engine after each speak ensures reliable
+            # multi-turn voice output. This only affects the TTS engine state, NOT
+            # Sovereign's main loop or conversation context.
+            self._engine.stop()
+            self._engine = None  # Force reload on next speak
+            
             logger.info("Speech completed")
         
         except Exception as e:

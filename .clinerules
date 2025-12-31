@@ -217,3 +217,13 @@ Prefer self-explanatory code: descriptive names, small functions, strong TypeScr
 **If you're considering backward compatibility, STOP and ask for approval first.**
 
 **If you're planning more than 1-2 steps ahead or building for hypothetical future needs, STOP and simplify to current requirements.**
+
+### 9) Temporary debug/test files (keep repo clean)
+**Ad-hoc debug scripts, reproduction tests, or diagnostic files created during debugging must go in `tests/_temp_/` for easy cleanup.**
+
+When creating temporary files:
+- Place in `tests/_temp_/` directory
+- Use descriptive names (e.g., `debug_tts_state.py`, `repro_audio_hang.py`)
+- Clean up after investigation completes
+
+**Enforcement:** Before completing a debug task, verify all temporary files are deleted or in `tests/_temp_/`.
