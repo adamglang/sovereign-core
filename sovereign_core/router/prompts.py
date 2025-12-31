@@ -93,12 +93,13 @@ OR
 }"""
 
 
-def get_conversational_prompt(conversation_history: List[dict]) -> str:
+def get_conversational_prompt(conversation_history: List[dict], context_messages: int = 10) -> str:
     """
     Get the system prompt for generating conversational responses.
     
     Args:
         conversation_history: List of previous conversation messages
+        context_messages: Number of recent messages to include as context
         
     Returns:
         System prompt for conversational response generation
@@ -106,7 +107,7 @@ def get_conversational_prompt(conversation_history: List[dict]) -> str:
     history_str = ""
     if conversation_history:
         history_str = "\nRecent conversation:\n"
-        for msg in conversation_history[-3:]:  # Last 3 messages for context
+        for msg in conversation_history[-context_messages:]:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             history_str += f"{role}: {content}\n"

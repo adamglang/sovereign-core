@@ -55,14 +55,14 @@ class WakeWordDetector:
                 "keywords": config.keywords,
                 "sensitivity": config.sensitivity,
             }
-            if config.model_path:
-                provider_config["model_path"] = config.model_path
+            if hasattr(config, 'keyword_path') and config.keyword_path:
+                provider_config["keyword_path"] = config.keyword_path
         else:
             # Backward compatibility: build config from individual parameters
             from ..config import WakeWordConfig as WakeWordConfigClass
             self.config = WakeWordConfigClass(
                 access_key=access_key,
-                model_path=model_path,
+                keyword_path=model_path,
                 sensitivity=sensitivity,
             )
             provider_config = {
@@ -71,7 +71,7 @@ class WakeWordDetector:
                 "sensitivity": sensitivity,
             }
             if model_path:
-                provider_config["model_path"] = model_path
+                provider_config["keyword_path"] = model_path
         
         self.provider_name = provider_name
         

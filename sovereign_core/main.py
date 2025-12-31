@@ -140,6 +140,7 @@ class SovereignCore:
             llm_provider=llm_provider,
             db_path=self.config.ipc.database_path,
             action_keywords=self.config.router.action_keywords,
+            context_messages=self.config.conversation.context_messages,
         )
         
         # Initialize wake word detector
@@ -181,9 +182,10 @@ class SovereignCore:
             "content": response_text,
         })
         
-        # Keep history manageable (last 10 exchanges)
-        if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
+        # Keep history manageable
+        max_messages = self.config.conversation.max_history_messages
+        if len(self.conversation_history) > max_messages:
+            self.conversation_history = self.conversation_history[-max_messages:]
     
     def main_loop(self) -> None:
         """
