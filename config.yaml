@@ -89,3 +89,9 @@ logging:
   file: "./logs/sovereign.log"
   # Console output enabled
   console: true
+  # Maximum log file size in bytes (default: 10MB)
+  max_bytes: 10485760
+  # Number of backup log files to keep
+  backup_count: 5
+  # Log level for third-party libraries (prevents bloat from verbose logging)
+  third_party_level: "WARNING"
