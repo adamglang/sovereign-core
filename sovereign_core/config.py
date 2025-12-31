@@ -77,6 +77,7 @@ class ConversationConfig(BaseModel):
 
     max_history_messages: int = Field(default=10, ge=1)
     context_messages: int = Field(default=10, ge=1)
+    follow_up_timeout_seconds: float = Field(default=10.0, ge=0.0)
 
 
 class LoggingConfig(BaseModel):

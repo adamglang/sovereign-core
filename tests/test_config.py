@@ -11,7 +11,9 @@ from pydantic import ValidationError
 
 from sovereign_core.config import (
     AudioConfig,
+    ConversationConfig,
     load_config,
+    LLMConfig,
     LoggingConfig,
     SovereignConfig,
     STTConfig,
@@ -51,6 +53,11 @@ def valid_config_data():
         },
         "router": {
             "action_keywords": ["play", "pause", "stop"],
+        },
+        "conversation": {
+            "max_history_messages": 10,
+            "context_messages": 10,
+            "follow_up_timeout_seconds": 10.0,
         },
         "logging": {
             "level": "INFO",
@@ -258,6 +265,7 @@ def test_config_uses_sovereign_config_path_env_var():
             "tts": {},
             "ipc": {},
             "router": {},
+            "conversation": {},
             "logging": {},
         }, f)
         temp_path = f.name
