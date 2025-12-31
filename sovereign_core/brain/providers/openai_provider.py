@@ -29,9 +29,9 @@ class OpenAIProvider(LLMProvider):
     
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        temperature: float = 0.7,
-        max_tokens: int = 1000,
+        model: str,
+        temperature: float,
+        max_tokens: int,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
@@ -42,8 +42,8 @@ class OpenAIProvider(LLMProvider):
             model: OpenAI model name (e.g., 'gpt-4o-mini', 'gpt-4-turbo')
             temperature: Default temperature for responses
             max_tokens: Maximum tokens in response
-            max_retries: Number of retry attempts for failed requests
-            retry_delay: Initial delay in seconds between retries (exponential backoff)
+            max_retries: Number of retry attempts for failed requests (internal default)
+            retry_delay: Initial delay in seconds between retries (internal default)
         
         Raises:
             ValueError: If OPENAI_API_KEY environment variable is not set

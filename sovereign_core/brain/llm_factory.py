@@ -50,9 +50,9 @@ def get_llm_provider(
     if provider_name_lower == "openai":
         logger.info("Initializing OpenAI provider")
         return OpenAIProvider(
-            model=config.get("model", "gpt-4o-mini"),
-            temperature=config.get("temperature", 0.7),
-            max_tokens=config.get("max_tokens", 1000),
+            model=config["model"],
+            temperature=config["temperature"],
+            max_tokens=config["max_tokens"],
         )
     
     # Future provider implementations:

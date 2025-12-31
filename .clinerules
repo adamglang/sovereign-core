@@ -194,6 +194,21 @@ Prefer self-explanatory code: descriptive names, small functions, strong TypeScr
 - Before adding to config, ask: "Do we actually need to change this, or am I over-architecting?"
 - When refactoring, consolidate scattered magic numbers into config if they meet the criteria above
 
+### 8) Single source of truth for configuration defaults
+**Configuration values must have exactly ONE default definition.** Never duplicate defaults across config models, factories, or provider constructors.
+
+**Correct pattern:**
+- ✅ Pydantic `Field(default=value)` in config.py - single source of truth
+- ✅ Factories use `config["key"]` - direct access, no fallbacks
+- ✅ Provider constructors require config params - no defaults for user-facing settings
+
+**Violations to avoid:**
+- ❌ `config.get("model", "gpt-4o-mini")` in factory when LLMConfig already has this default
+- ❌ `def __init__(self, temperature: float = 0.7)` in provider when config defines it
+- ❌ Any duplicate default value in multiple locations
+
+**Exception:** Internal implementation details (retry counts, backoff delays) not exposed in config.yaml can have provider-level defaults.
+
 ## Enforcement Heuristic
 **If a proposed change creates a duplicate or conflicting pattern, stop and propose consolidation or a refactor plan instead.**
 

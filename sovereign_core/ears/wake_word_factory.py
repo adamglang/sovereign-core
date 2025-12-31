@@ -72,8 +72,8 @@ def get_wake_word_provider(
         
         return PorcupineProvider(
             access_key=access_key,
+            sensitivity=config["sensitivity"],
             keywords=keywords,
-            sensitivity=config.get("sensitivity", 0.5),
             keyword_path=keyword_path,
         )
     

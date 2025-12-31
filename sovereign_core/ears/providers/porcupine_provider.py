@@ -29,8 +29,8 @@ class PorcupineProvider(WakeWordProvider):
     def __init__(
         self,
         access_key: str,
+        sensitivity: float,
         keywords: list[str] | None = None,
-        sensitivity: float = 0.5,
         keyword_path: str | None = None,
     ):
         """
@@ -38,8 +38,8 @@ class PorcupineProvider(WakeWordProvider):
         
         Args:
             access_key: Picovoice access key for authentication
-            keywords: List of built-in wake word keywords (set via config)
-            sensitivity: Detection sensitivity 0.0-1.0 (default: 0.5)
+            sensitivity: Detection sensitivity 0.0-1.0
+            keywords: List of built-in wake word keywords (optional if keyword_path provided)
             keyword_path: Optional path to custom .ppn wake word file
         
         Raises:
