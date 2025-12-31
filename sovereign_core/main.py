@@ -119,26 +119,17 @@ class SovereignCore:
             console_handler.setFormatter(console_formatter)
             root_logger.addHandler(console_handler)
         
-        # Suppress noisy third-party libraries to prevent log bloat
+        # Filter third-party libraries to prevent log bloat
         third_party_level = getattr(logging, log_config.third_party_level)
-        noisy_loggers = [
-            'pvporcupine',
-            'pyaudio',
-            'faster_whisper',
-            'openai',
-            'httpx',
-            'httpcore',
-            'urllib3',
-            'sounddevice',
-        ]
         
-        for logger_name in noisy_loggers:
+        for logger_name in log_config.third_party_loggers:
             logging.getLogger(logger_name).setLevel(third_party_level)
         
         logger.info(
             f"Logging configured: level={log_config.level}, file={log_config.file}, "
             f"max_size={log_config.max_bytes / 1_048_576:.1f}MB, "
-            f"backups={log_config.backup_count}, third_party_level={log_config.third_party_level}"
+            f"backups={log_config.backup_count}, third_party_level={log_config.third_party_level}, "
+            f"third_party_loggers={len(log_config.third_party_loggers)}"
         )
     
     def _initialize_components(self) -> None:

@@ -95,3 +95,13 @@ logging:
   backup_count: 5
   # Log level for third-party libraries (prevents bloat from verbose logging)
   third_party_level: "WARNING"
+  # Third-party loggers to filter (set to third_party_level instead of root level)
+  third_party_loggers:
+    - "pvporcupine"
+    - "pyaudio"
+    - "faster_whisper"
+    - "openai"
+    - "httpx"
+    - "httpcore"
+    - "urllib3"
+    - "sounddevice"
