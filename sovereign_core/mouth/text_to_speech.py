@@ -1,15 +1,19 @@
 """
 Text-to-Speech module for Sovereign.
 
-Speaks responses back to user using Windows native TTS (pyttsx3).
-Interface designed to support future TTS providers like Piper.
+Uses Piper TTS for high-quality neural speech synthesis with GPU acceleration.
 """
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Optional
 
-import pyttsx3
+import numpy as np
+import sounddevice as sd
+from piper import PiperVoice
+from piper.config import SynthesisConfig
 
 from ..config import TTSConfig
 
@@ -18,11 +22,7 @@ logger = logging.getLogger(__name__)
 
 class TextToSpeech:
     """
-    Text-to-Speech engine for speaking responses.
-    
-    Primary implementation uses Windows native TTS via pyttsx3.
-    Engine is loaded lazily on first speak to reduce startup time.
-    Supports voice selection, speech rate, and volume control.
+    Text-to-Speech engine using Piper for neural voice synthesis.
     """
     
     def __init__(self, config: TTSConfig):
@@ -30,113 +30,90 @@ class TextToSpeech:
         Initialize the text-to-speech engine.
         
         Args:
-            config: TTS configuration with provider, voice, and rate settings
+            config: TTS configuration with voice model and GPU settings
         """
         self.config = config
-        self._engine: Optional[pyttsx3.Engine] = None
+        self.voice: Optional[PiperVoice] = None
+        self.executor = ThreadPoolExecutor(max_workers=1)
         
         logger.info(
-            f"TextToSpeech initialized (provider={config.provider}, "
-            f"voice={config.voice or 'default'}, rate={config.rate})"
+            f"TextToSpeech initialized (voice_model={config.voice_model}, "
+            f"speaker_id={config.speaker_id}, use_cuda={config.use_cuda})"
         )
     
-    def _load_engine(self) -> None:
+    def _load_voice(self) -> None:
         """
-        Lazily load the TTS engine on first speak.
-        
-        Initializes pyttsx3 engine, applies voice and rate settings from config,
-        and handles missing voices gracefully with fallback to default.
+        Lazily load the Piper voice model on first speak.
         
         Raises:
-            RuntimeError: If engine initialization fails
+            FileNotFoundError: If model files are missing
+            RuntimeError: If voice loading fails
         """
-        if self._engine is not None:
+        if self.voice is not None:
             return
         
+        logger.info("Loading Piper voice model (first speak)")
+        
+        model_path = Path(f"./models/piper/{self.config.voice_model}.onnx")
+        config_path = Path(f"./models/piper/{self.config.voice_model}.onnx.json")
+        
+        if not model_path.exists() or not config_path.exists():
+            raise FileNotFoundError(
+                f"Piper model files not found: {model_path}\n"
+                f"Please run setup to download models. See SETUP.md for details."
+            )
+        
         try:
-            logger.info("Loading TTS engine (first speak)")
+            self.voice = PiperVoice.load(
+                str(model_path),
+                use_cuda=self.config.use_cuda
+            )
             
-            # Initialize pyttsx3 engine
-            # NOTE: For future Piper TTS integration, replace this section with
-            # Piper-specific initialization while maintaining the same interface
-            self._engine = pyttsx3.init()
-            
-            # Apply voice selection if specified
-            if self.config.voice:
-                voices = self._engine.getProperty('voices')
-                voice_found = False
-                
-                for voice in voices:
-                    if self.config.voice.lower() in voice.name.lower():
-                        self._engine.setProperty('voice', voice.id)
-                        voice_found = True
-                        logger.info(f"Voice set to: {voice.name}")
-                        break
-                
-                if not voice_found:
-                    logger.warning(
-                        f"Voice '{self.config.voice}' not found - using default voice"
-                    )
-                    available_voices = [v.name for v in voices]
-                    logger.debug(f"Available voices: {available_voices}")
-            
-            # Apply speech rate
-            # pyttsx3 rate is in words per minute (default ~200)
-            # config.rate is a multiplier (0.5-2.0), so convert to wpm
-            default_rate = self._engine.getProperty('rate')
-            new_rate = int(default_rate * self.config.rate)
-            self._engine.setProperty('rate', new_rate)
-            logger.info(f"Speech rate set to {new_rate} wpm (multiplier: {self.config.rate})")
-            
-            # Set volume to max (0.0-1.0 range)
-            # NOTE: Could be made configurable via TTSConfig if needed
-            self._engine.setProperty('volume', 1.0)
-            
-            logger.info("TTS engine loaded successfully")
+            device = "GPU (CUDA)" if self.config.use_cuda else "CPU"
+            logger.info(f"Piper voice loaded successfully on {device}")
         
         except Exception as e:
-            logger.error(f"Failed to load TTS engine: {e}")
-            raise RuntimeError(f"TTS engine initialization failed: {e}")
+            logger.error(f"Failed to load Piper voice: {e}")
+            raise RuntimeError(f"Voice model loading failed: {e}")
     
     def speak(self, text: str) -> None:
         """
         Speak text synchronously (blocking).
         
-        Converts text to speech using the configured TTS engine and voice.
-        This method blocks until speech completes.
-        
         Args:
             text: The text to speak
         
         Raises:
-            RuntimeError: If speech synthesis fails
             ValueError: If text is empty
+            RuntimeError: If synthesis or playback fails
         """
         if not text or not text.strip():
             logger.warning("Empty text provided for speech")
             return
         
-        # Ensure engine is loaded
-        self._load_engine()
+        self._load_voice()
         
         try:
             logger.info(f"Speaking text (length={len(text)}): {text[:50]}...")
             
-            # Queue text for speech
-            self._engine.say(text)
+            # Create synthesis config with speaker_id if specified
+            syn_config = None
+            if self.config.speaker_id is not None:
+                syn_config = SynthesisConfig(speaker_id=self.config.speaker_id)
             
-            # Block until speech completes
-            # NOTE: For Piper TTS, this would be replaced with Piper's
-            # synthesis and audio playback logic
-            self._engine.runAndWait()
+            # Synthesize returns Iterable[AudioChunk], extract audio arrays
+            audio_chunks = []
+            sample_rate = None
+            for chunk in self.voice.synthesize(text, syn_config):
+                audio_chunks.append(chunk.audio_int16_array)
+                if sample_rate is None:
+                    sample_rate = chunk.sample_rate
             
-            # CRITICAL FIX: On Windows, pyttsx3/SAPI5 leaves the engine in a bad state
-            # after the first runAndWait() call, causing subsequent calls to silently fail.
-            # Stopping and reinitializing the engine after each speak ensures reliable
-            # multi-turn voice output. This only affects the TTS engine state, NOT
-            # Sovereign's main loop or conversation context.
-            self._engine.stop()
-            self._engine = None  # Force reload on next speak
+            # Concatenate all audio chunks into single array
+            audio_array = np.concatenate(audio_chunks)
+            
+            sd.play(audio_array, samplerate=sample_rate)
+            sd.wait()
             
             logger.info("Speech completed")
         
@@ -148,15 +125,12 @@ class TextToSpeech:
         """
         Speak text asynchronously (non-blocking).
         
-        Converts text to speech in a background thread to avoid blocking
-        the event loop. Useful for async/await workflows.
-        
         Args:
             text: The text to speak
         
         Raises:
-            RuntimeError: If speech synthesis fails
             ValueError: If text is empty
+            RuntimeError: If synthesis or playback fails
         """
         if not text or not text.strip():
             logger.warning("Empty text provided for async speech")
@@ -165,16 +139,22 @@ class TextToSpeech:
         try:
             logger.info(f"Speaking text asynchronously (length={len(text)})")
             
-            # Run blocking speak() in executor to avoid blocking event loop
-            # NOTE: For Piper TTS, this could use native async I/O if available
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.speak, text)
+            await loop.run_in_executor(self.executor, self.speak, text)
             
             logger.info("Async speech completed")
         
         except Exception as e:
             logger.error(f"Async speech synthesis failed: {e}")
             raise RuntimeError(f"Failed to speak text asynchronously: {e}")
+    
+    def cleanup(self) -> None:
+        """
+        Release TTS resources.
+        """
+        self.executor.shutdown(wait=True)
+        self.voice = None
+        logger.debug("TTS resources released")
     
     def __enter__(self):
         """Context manager entry."""
@@ -183,14 +163,6 @@ class TextToSpeech:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
         Context manager exit with cleanup.
-        
-        Stops any ongoing speech and releases TTS engine resources.
         """
-        if self._engine is not None:
-            try:
-                self._engine.stop()
-                logger.debug("TTS engine stopped")
-            except Exception as e:
-                logger.warning(f"Error stopping TTS engine: {e}")
-        
+        self.cleanup()
         logger.debug("TextToSpeech context exited")

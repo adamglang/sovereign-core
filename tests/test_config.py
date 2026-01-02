@@ -45,8 +45,9 @@ def valid_config_data():
             "temperature": 0.7,
         },
         "tts": {
-            "provider": "windows",
-            "rate": 1.0,
+            "voice_model": "en_US-lessac-medium",
+            "speaker_id": None,
+            "use_cuda": False,
         },
         "ipc": {
             "database_path": "./test.db",
@@ -94,7 +95,8 @@ def test_successful_config_loading(temp_config_file):
         assert config.audio.sample_rate == 16000
         assert config.stt.model_size == "base"
         assert config.llm.provider == "openai"
-        assert config.tts.provider == "windows"
+        assert config.tts.voice_model == "en_US-lessac-medium"
+        assert config.tts.use_cuda is False
         assert config.logging.level == "INFO"
 
 
@@ -239,17 +241,17 @@ def test_llm_config_defaults():
 
 def test_tts_config_validation():
     """Test TTSConfig validation."""
-    # Valid config
-    config = TTSConfig(rate=1.5)
-    assert config.rate == 1.5
+    # Valid config with defaults
+    config = TTSConfig()
+    assert config.voice_model == "en_US-lessac-medium"
+    assert config.speaker_id is None
+    assert config.use_cuda is True
     
-    # Rate too high
-    with pytest.raises(ValidationError):
-        TTSConfig(rate=3.0)
-    
-    # Rate too low
-    with pytest.raises(ValidationError):
-        TTSConfig(rate=0.1)
+    # Valid config with custom values
+    config = TTSConfig(voice_model="en_US-amy-medium", speaker_id=42, use_cuda=False)
+    assert config.voice_model == "en_US-amy-medium"
+    assert config.speaker_id == 42
+    assert config.use_cuda is False
 
 
 def test_config_uses_sovereign_config_path_env_var():

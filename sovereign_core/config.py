@@ -54,9 +54,14 @@ class LLMConfig(BaseModel):
 class TTSConfig(BaseModel):
     """Text-to-Speech configuration."""
 
-    provider: str = "windows"
-    voice: Optional[str] = None
-    rate: float = Field(default=1.0, ge=0.5, le=2.0)
+    # Piper voice model name (without .onnx extension)
+    voice_model: str = "en_US-lessac-medium"
+    
+    # Optional speaker ID for multi-speaker models (None = default speaker)
+    speaker_id: Optional[int] = None
+    
+    # GPU acceleration via ONNX Runtime (requires CUDA on RTX 4070)
+    use_cuda: bool = Field(default=True)
 
 
 class IPCConfig(BaseModel):

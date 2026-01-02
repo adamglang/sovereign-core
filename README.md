@@ -35,7 +35,7 @@ Sovereign Core is the brain, ears, and mouth. It:
 - Outputs structured JSON intents when actions are needed
 
 ### 🗣️ Mouth
-- Text-to-speech (Piper or Windows native)
+- Text-to-speech (Piper neural TTS with GPU acceleration)
 - Spoken responses
 - Kid-friendly tone shaping
 
@@ -60,7 +60,7 @@ Those are the responsibilities of **Sovereign Executor**.
 - **Audio:** sounddevice or pyaudio
 - **STT:** faster-whisper (local, offline)
 - **LLM:** Pluggable (cloud or local)
-- **TTS:** Piper (preferred) or Windows native
+- **TTS:** Piper neural TTS with GPU acceleration
 
 **Why Python on Windows?**
 - Reliable microphone access
@@ -120,14 +120,6 @@ python -m sovereign_core.main
 ```
 
 **For complete setup instructions, troubleshooting, and configuration options, see [`SETUP.md`](SETUP.md).**
-
----
-
-## Architecture
-
-For complete architectural details, see [`docs/architecture.md`](docs/architecture.md).
-
-For overall project context, see [`../docs/sovereign.md`](../docs/sovereign.md).
 
 ---
 

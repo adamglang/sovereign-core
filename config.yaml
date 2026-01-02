@@ -48,12 +48,15 @@ llm:
 
 # Text-to-Speech settings
 tts:
-  # Provider: "windows" for Windows native, "piper" for Piper TTS (future)
-  provider: "windows"
-  # Voice name (Windows native voice)
-  voice: null  # Uses system default
-  # Speech rate (0.5 to 2.0, 1.0 is normal)
-  rate: 1.0
+  # Piper voice model name (without .onnx extension)
+  # Options: en_US-lessac-medium, en_US-libritts-high, en_US-ryan-high
+  voice_model: "en_US-libritts-high"
+  
+  # Speaker ID for multi-speaker models (null = default speaker)
+  speaker_id: null
+  
+  # GPU acceleration (requires onnxruntime-gpu and CUDA)
+  use_cuda: true
 
 # Inter-process communication settings
 ipc:

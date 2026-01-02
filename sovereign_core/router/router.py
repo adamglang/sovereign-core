@@ -1,6 +1,7 @@
 """Main Router component for sovereign-core."""
 
 import logging
+import time
 from typing import Any, Dict, List
 
 from ..brain.llm_interface import LLMProvider
@@ -89,15 +90,22 @@ class Router:
         logger.info(f"Routing utterance: {utterance}")
         
         # Step 1: Classify the intent
+        classify_start = time.perf_counter()
         intent_type = classify_intent(
             utterance=utterance,
             llm_provider=self.llm_provider,
             action_keywords=self.action_keywords,
         )
+        classify_duration = time.perf_counter() - classify_start
+        logger.info(f"Intent classification took {classify_duration:.2f}s")
         
         # Step 2: Handle based on classification
         if intent_type == IntentType.CONVERSATIONAL:
-            return self._handle_conversational(utterance, conversation_history)
+            handle_start = time.perf_counter()
+            result = self._handle_conversational(utterance, conversation_history)
+            handle_duration = time.perf_counter() - handle_start
+            logger.info(f"Conversational handling took {handle_duration:.2f}s")
+            return result
         
         elif intent_type == IntentType.ACTION:
             return self._handle_action(utterance)
@@ -138,11 +146,14 @@ class Router:
         ]
         
         try:
+            llm_start = time.perf_counter()
             response = self.llm_provider.generate_response(
                 messages=messages,
                 temperature=0.7,  # More creative for conversation
             )
+            llm_duration = time.perf_counter() - llm_start
             
+            logger.info(f"LLM response generation took {llm_duration:.2f}s")
             logger.info(f"Generated conversational response: {response[:100]}...")
             
             return RouterResponse(
