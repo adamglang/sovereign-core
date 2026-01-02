@@ -1,8 +1,17 @@
 """Test Text-to-Speech functionality."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import numpy as np
 import pytest
+
+# Mock piper modules before import
+piper_mock = MagicMock()
+piper_config_mock = MagicMock()
+sys.modules['piper'] = piper_mock
+sys.modules['piper.config'] = piper_config_mock
 
 from sovereign_core.config import TTSConfig
 from sovereign_core.mouth.text_to_speech import TextToSpeech
@@ -10,34 +19,62 @@ from sovereign_core.mouth.text_to_speech import TextToSpeech
 
 @pytest.fixture
 def valid_tts_config():
-    """Valid TTS configuration."""
+    """Valid TTS configuration with Piper settings."""
     return TTSConfig(
-        provider="windows",
-        voice=None,
-        rate=1.0,
+        voice_model="en_US-amy-medium",
+        speaker_id=0,
+        use_cuda=False,
     )
 
 
 @pytest.fixture
-def custom_tts_config():
-    """TTS configuration with custom settings."""
+def cuda_tts_config():
+    """TTS configuration with CUDA enabled."""
     return TTSConfig(
-        provider="windows",
-        voice="David",
-        rate=1.5,
+        voice_model="en_US-amy-medium",
+        speaker_id=0,
+        use_cuda=True,
     )
 
 
 @pytest.fixture
-def mock_pyttsx3_engine():
-    """Mock pyttsx3 engine."""
-    mock_engine = MagicMock()
-    mock_engine.getProperty.side_effect = lambda prop: {
-        'rate': 200,
-        'volume': 1.0,
-        'voices': [],
-    }.get(prop)
-    return mock_engine
+def mock_piper_voice():
+    """Mock PiperVoice instance with synthesize method."""
+    mock_voice = Mock()
+    
+    def create_audio_chunk():
+        """Create a fresh mock AudioChunk each time."""
+        mock_chunk = Mock()
+        mock_chunk.audio_int16_array = np.zeros(22050, dtype=np.int16)
+        mock_chunk.sample_rate = 22050
+        return mock_chunk
+    
+    # Return a fresh iterator each time synthesize is called
+    mock_voice.synthesize.side_effect = lambda *args, **kwargs: iter([create_audio_chunk()])
+    mock_voice.config.sample_rate = 22050
+    return mock_voice
+
+
+@pytest.fixture
+def mock_piper_class(mock_piper_voice):
+    """Mock PiperVoice class."""
+    with patch('sovereign_core.mouth.text_to_speech.PiperVoice') as mock_class:
+        mock_class.load.return_value = mock_piper_voice
+        yield mock_class
+
+
+@pytest.fixture
+def mock_sounddevice():
+    """Mock sounddevice module."""
+    with patch('sovereign_core.mouth.text_to_speech.sd') as mock_sd:
+        yield mock_sd
+
+
+@pytest.fixture
+def mock_path_exists():
+    """Mock Path.exists() to return True for model files."""
+    with patch.object(Path, 'exists', return_value=True):
+        yield
 
 
 def test_tts_initialization(valid_tts_config):
@@ -45,138 +82,130 @@ def test_tts_initialization(valid_tts_config):
     tts = TextToSpeech(valid_tts_config)
     
     assert tts.config == valid_tts_config
-    assert tts._engine is None  # Lazy loading
+    assert tts.voice is None
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_successful_speak(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test successful text-to-speech with mocked pyttsx3."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
+def test_lazy_voice_loading(valid_tts_config, mock_piper_class, mock_sounddevice, mock_path_exists):
+    """Test voice is loaded lazily on first speak."""
+    tts = TextToSpeech(valid_tts_config)
     
+    assert tts.voice is None
+    mock_piper_class.load.assert_not_called()
+    
+    tts.speak("Hello world")
+    
+    assert tts.voice is not None
+    mock_piper_class.load.assert_called_once()
+
+
+def test_voice_loaded_only_once(valid_tts_config, mock_piper_class, mock_sounddevice, mock_path_exists):
+    """Test voice is loaded only once across multiple speaks."""
+    tts = TextToSpeech(valid_tts_config)
+    
+    tts.speak("First")
+    tts.speak("Second")
+    tts.speak("Third")
+    
+    mock_piper_class.load.assert_called_once()
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_speak_basic(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test successful text-to-speech with mocked Piper."""
     tts = TextToSpeech(valid_tts_config)
     tts.speak("Hello world")
     
-    # Verify engine methods were called
-    mock_pyttsx3_engine.say.assert_called_once_with("Hello world")
-    mock_pyttsx3_engine.runAndWait.assert_called_once()
+    # Verify synthesize called with text and SynthesisConfig
+    assert mock_piper_voice.synthesize.call_count == 1
+    call_args = mock_piper_voice.synthesize.call_args[0]
+    assert call_args[0] == "Hello world"
+    # Check that SynthesisConfig was passed (not None since speaker_id=0)
+    assert call_args[1] is not None
+    
+    mock_play.assert_called_once()
+    mock_wait.assert_called_once()
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_empty_text_handling(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test handling of empty text input."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    tts = TextToSpeech(valid_tts_config)
-    
-    # Empty string should not trigger speech
-    tts.speak("")
-    mock_pyttsx3_engine.say.assert_not_called()
-    
-    # Whitespace-only should not trigger speech
-    tts.speak("   ")
-    mock_pyttsx3_engine.say.assert_not_called()
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_voice_selection(mock_pyttsx3, custom_tts_config):
-    """Test custom voice selection."""
-    mock_engine = MagicMock()
-    mock_pyttsx3.init.return_value = mock_engine
-    
-    # Create mock voices
-    mock_voice1 = MagicMock()
-    mock_voice1.name = "Microsoft David Desktop"
-    mock_voice1.id = "voice_id_1"
-    
-    mock_voice2 = MagicMock()
-    mock_voice2.name = "Microsoft Zira Desktop"
-    mock_voice2.id = "voice_id_2"
-    
-    mock_engine.getProperty.side_effect = lambda prop: {
-        'rate': 200,
-        'voices': [mock_voice1, mock_voice2],
-    }.get(prop)
-    
-    tts = TextToSpeech(custom_tts_config)
-    tts.speak("Test")
-    
-    # Verify voice was set (David matches mock_voice1)
-    mock_engine.setProperty.assert_any_call('voice', 'voice_id_1')
-
-
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_voice_not_found_fallback(mock_pyttsx3, mock_pyttsx3_engine):
-    """Test fallback to default voice when specified voice not found."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    # Create mock voices without the requested voice
-    mock_voice = MagicMock()
-    mock_voice.name = "Microsoft Zira Desktop"
-    mock_voice.id = "voice_id_1"
-    
-    def get_property(prop):
-        if prop == 'voices':
-            return [mock_voice]
-        elif prop == 'rate':
-            return 200
-        return None
-    
-    mock_pyttsx3_engine.getProperty.side_effect = get_property
-    
-    config = TTSConfig(provider="windows", voice="NonexistentVoice", rate=1.0)
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_speak_with_speaker_id(mock_wait, mock_play, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test speaking with custom speaker ID."""
+    config = TTSConfig(voice_model="en_US-amy-medium", speaker_id=3, use_cuda=False)
     tts = TextToSpeech(config)
     tts.speak("Test")
     
-    # Should not have set voice property (falls back to default)
-    voice_set_calls = [
-        call for call in mock_pyttsx3_engine.setProperty.call_args_list
-        if call[0][0] == 'voice'
-    ]
-    assert len(voice_set_calls) == 0
+    # Verify SynthesisConfig created with speaker_id
+    assert mock_piper_voice.synthesize.call_count == 1
+    call_args = mock_piper_voice.synthesize.call_args[0]
+    assert call_args[0] == "Test"
+    assert call_args[1] is not None  # SynthesisConfig should be passed
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_speech_rate_setting(mock_pyttsx3, custom_tts_config, mock_pyttsx3_engine):
-    """Test speech rate is set correctly."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
+def test_empty_text_handling(valid_tts_config, mock_piper_class, mock_sounddevice, mock_path_exists):
+    """Test handling of empty text input."""
+    tts = TextToSpeech(valid_tts_config)
     
-    tts = TextToSpeech(custom_tts_config)
+    tts.speak("")
+    mock_piper_class.load.assert_not_called()
+    
+    tts.speak("   ")
+    mock_piper_class.load.assert_not_called()
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_cuda_loading(mock_wait, mock_play, cuda_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test voice loading with CUDA enabled."""
+    tts = TextToSpeech(cuda_tts_config)
     tts.speak("Test")
     
-    # Rate should be default (200) * config rate (1.5) = 300
-    mock_pyttsx3_engine.setProperty.assert_any_call('rate', 300)
+    call_args = mock_piper_class.load.call_args
+    assert call_args[1]['use_cuda'] is True
+    assert 'en_US-amy-medium.onnx' in call_args[0][0]
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_volume_setting(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test volume is set to maximum."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_cpu_loading(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test voice loading with CPU (CUDA disabled)."""
     tts = TextToSpeech(valid_tts_config)
     tts.speak("Test")
     
-    # Volume should be set to 1.0 (max)
-    mock_pyttsx3_engine.setProperty.assert_any_call('volume', 1.0)
+    call_args = mock_piper_class.load.call_args
+    assert call_args[1]['use_cuda'] is False
+    assert 'en_US-amy-medium.onnx' in call_args[0][0]
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_engine_initialization_failure(mock_pyttsx3, valid_tts_config):
-    """Test handling of TTS engine initialization failures."""
-    mock_pyttsx3.init.side_effect = RuntimeError("Engine init failed")
+def test_missing_model_files(valid_tts_config, mock_piper_class):
+    """Test FileNotFoundError when model files are missing."""
+    with patch.object(Path, 'exists', return_value=False):
+        tts = TextToSpeech(valid_tts_config)
+        
+        with pytest.raises(FileNotFoundError) as exc_info:
+            tts.speak("Test")
+        
+        assert "Piper model files not found" in str(exc_info.value)
+        assert "SETUP.md" in str(exc_info.value)
+
+
+def test_voice_loading_failure(valid_tts_config, mock_piper_class, mock_path_exists):
+    """Test handling of voice loading failures."""
+    mock_piper_class.load.side_effect = RuntimeError("CUDA unavailable")
     
     tts = TextToSpeech(valid_tts_config)
     
     with pytest.raises(RuntimeError) as exc_info:
         tts.speak("Test")
     
-    assert "TTS engine initialization failed" in str(exc_info.value)
+    assert "Voice model loading failed" in str(exc_info.value)
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_speech_synthesis_failure(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_synthesis_failure(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
     """Test handling of speech synthesis failures."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    mock_pyttsx3_engine.runAndWait.side_effect = RuntimeError("Speech failed")
+    mock_piper_voice.synthesize.side_effect = RuntimeError("Synthesis error")
     
     tts = TextToSpeech(valid_tts_config)
     
@@ -186,34 +215,106 @@ def test_speech_synthesis_failure(mock_pyttsx3, valid_tts_config, mock_pyttsx3_e
     assert "Failed to speak text" in str(exc_info.value)
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_context_manager(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
-    """Test TextToSpeech works as context manager."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_playback_failure(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test handling of audio playback failures."""
+    mock_play.side_effect = RuntimeError("Audio device error")
     
+    tts = TextToSpeech(valid_tts_config)
+    
+    with pytest.raises(RuntimeError) as exc_info:
+        tts.speak("Test")
+    
+    assert "Failed to speak text" in str(exc_info.value)
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_speak_async(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test asynchronous speech delegates to sync speak."""
+    import asyncio
+    
+    tts = TextToSpeech(valid_tts_config)
+    
+    asyncio.run(tts.speak_async("Async test"))
+    
+    # Verify synthesize was called
+    assert mock_piper_voice.synthesize.call_count == 1
+    call_args = mock_piper_voice.synthesize.call_args[0]
+    assert call_args[0] == "Async test"
+    
+    mock_play.assert_called_once()
+    mock_wait.assert_called_once()
+
+
+def test_speak_async_empty_text(valid_tts_config, mock_piper_class, mock_sounddevice, mock_path_exists):
+    """Test async speak with empty text."""
+    import asyncio
+    
+    tts = TextToSpeech(valid_tts_config)
+    
+    asyncio.run(tts.speak_async(""))
+    mock_piper_class.load.assert_not_called()
+    
+    asyncio.run(tts.speak_async("   "))
+    mock_piper_class.load.assert_not_called()
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_speak_async_failure(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test handling of async speech failures."""
+    import asyncio
+    
+    mock_piper_voice.synthesize.side_effect = RuntimeError("Async synthesis error")
+    
+    tts = TextToSpeech(valid_tts_config)
+    
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(tts.speak_async("Test"))
+    
+    assert "Failed to speak text asynchronously" in str(exc_info.value)
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_cleanup(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test cleanup releases resources."""
+    tts = TextToSpeech(valid_tts_config)
+    tts.speak("Test")
+    
+    assert tts.voice is not None
+    
+    tts.cleanup()
+    
+    assert tts.voice is None
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_context_manager(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test TextToSpeech works as context manager."""
     with TextToSpeech(valid_tts_config) as tts:
         assert isinstance(tts, TextToSpeech)
         tts.speak("Test")
+        assert tts.voice is not None
     
-    # Verify cleanup was called
-    mock_pyttsx3_engine.stop.assert_called_once()
+    assert tts.voice is None
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_context_manager_without_speak(mock_pyttsx3, valid_tts_config):
-    """Test context manager when engine was never initialized."""
+def test_context_manager_without_speak(valid_tts_config):
+    """Test context manager when voice was never loaded."""
     with TextToSpeech(valid_tts_config) as tts:
-        # Don't call speak, so engine never initializes
         pass
     
-    # Should not raise even though engine is None
+    assert tts.voice is None
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_multiple_text_inputs(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_multiple_text_inputs(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
     """Test speaking multiple different texts."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
     tts = TextToSpeech(valid_tts_config)
     
     texts = [
@@ -225,54 +326,97 @@ def test_multiple_text_inputs(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engin
     for text in texts:
         tts.speak(text)
     
-    # Verify all texts were spoken
-    assert mock_pyttsx3_engine.say.call_count == len(texts)
+    assert mock_piper_voice.synthesize.call_count == len(texts)
+    # Check that all texts were synthesized
     for i, text in enumerate(texts):
-        assert mock_pyttsx3_engine.say.call_args_list[i][0][0] == text
+        assert mock_piper_voice.synthesize.call_args_list[i][0][0] == text
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_long_text_handling(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_long_text_handling(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
     """Test handling of long text inputs."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
     long_text = "This is a very long sentence. " * 100
     
     tts = TextToSpeech(valid_tts_config)
     tts.speak(long_text)
     
-    # Should handle long text without issues
-    mock_pyttsx3_engine.say.assert_called_once_with(long_text)
-    mock_pyttsx3_engine.runAndWait.assert_called_once()
+    # Verify long text was synthesized
+    assert mock_piper_voice.synthesize.call_count == 1
+    assert mock_piper_voice.synthesize.call_args[0][0] == long_text
+    mock_play.assert_called_once()
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_special_characters_in_text(mock_pyttsx3, valid_tts_config, mock_pyttsx3_engine):
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_special_characters_in_text(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
     """Test handling of special characters in text."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
     special_text = "Hello! How are you? I'm fine. #test @user $100 50%"
     
     tts = TextToSpeech(valid_tts_config)
     tts.speak(special_text)
     
-    # Should handle special characters
-    mock_pyttsx3_engine.say.assert_called_once_with(special_text)
+    # Verify special text was synthesized
+    assert mock_piper_voice.synthesize.call_count == 1
+    assert mock_piper_voice.synthesize.call_args[0][0] == special_text
 
 
-@patch('sovereign_core.mouth.text_to_speech.pyttsx3')
-def test_default_config_values(mock_pyttsx3, mock_pyttsx3_engine):
+def test_default_config_values():
     """Test TTS with default configuration values."""
-    mock_pyttsx3.init.return_value = mock_pyttsx3_engine
-    
-    config = TTSConfig()  # Use all defaults
+    config = TTSConfig()
     tts = TextToSpeech(config)
+    
+    assert config.voice_model == "en_US-lessac-medium"
+    assert config.speaker_id is None
+    assert config.use_cuda is True
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_audio_array_conversion(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test audio data is properly converted to numpy array."""
+    # Create mock AudioChunks
+    mock_chunk1 = Mock()
+    mock_chunk1.audio_int16_array = np.array([1, 2, 3], dtype=np.int16)
+    mock_chunk1.sample_rate = 22050
+    
+    mock_chunk2 = Mock()
+    mock_chunk2.audio_int16_array = np.array([4, 5, 6], dtype=np.int16)
+    mock_chunk2.sample_rate = 22050
+    
+    # Override fixture's side_effect with custom chunks
+    mock_piper_voice.synthesize.side_effect = lambda *args, **kwargs: iter([mock_chunk1, mock_chunk2])
+    
+    tts = TextToSpeech(valid_tts_config)
     tts.speak("Test")
     
-    # Verify defaults were applied
-    assert config.provider == "windows"
-    assert config.voice is None
-    assert config.rate == 1.0
+    called_audio = mock_play.call_args[0][0]
+    
+    assert isinstance(called_audio, np.ndarray)
+    assert called_audio.dtype == np.int16
+    # Should concatenate into single array [1,2,3,4,5,6]
+    assert len(called_audio) == 6
+    np.testing.assert_array_equal(called_audio, np.array([1, 2, 3, 4, 5, 6], dtype=np.int16))
+
+
+@patch('sovereign_core.mouth.text_to_speech.sd.play')
+@patch('sovereign_core.mouth.text_to_speech.sd.wait')
+def test_sample_rate_from_voice_config(mock_wait, mock_play, valid_tts_config, mock_piper_class, mock_piper_voice, mock_path_exists):
+    """Test sample rate is taken from AudioChunk, not voice config."""
+    # Create chunk with custom sample rate
+    def create_custom_chunk():
+        mock_chunk = Mock()
+        mock_chunk.audio_int16_array = np.zeros(22050, dtype=np.int16)
+        mock_chunk.sample_rate = 44100  # Custom sample rate
+        return mock_chunk
+    
+    mock_piper_voice.synthesize.side_effect = lambda *args, **kwargs: iter([create_custom_chunk()])
+    
+    tts = TextToSpeech(valid_tts_config)
+    tts.speak("Test")
+    
+    mock_play.assert_called_once()
+    assert mock_play.call_args[1]['samplerate'] == 44100
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Intent classification logic for the Router."""
 
 import logging
+import time
 from typing import List
 
 from ..brain.llm_interface import LLMProvider
@@ -44,9 +45,13 @@ def classify_intent(
     
     try:
         # Use low temperature for consistent classification
+        llm_start = time.perf_counter()
         response = llm_provider.generate_response(messages, temperature=0.1)
-        classification = response.strip().upper()
+        llm_duration = time.perf_counter() - llm_start
         
+        logger.info(f"Intent classification LLM call took {llm_duration:.2f}s")
+        
+        classification = response.strip().upper()
         logger.debug(f"LLM classification response: {classification}")
         
         # Parse the classification response

@@ -7,6 +7,23 @@ Provide always-on, repository-wide guidance to ensure consistency, minimal-comme
 
 ## Core Directives
 
+### 0) No silent downgrades / no janky workarounds (highest priority)
+**NEVER "fix" errors by disabling, downgrading, or bypassing core features** (e.g., turning off GPU/CUDA, reducing quality, changing defaults, switching to CPU).
+
+**If a failure is caused by missing or misconfigured dependencies:**
+1. **Attempt a real fix** - correct package, version, PATH, provider, config
+2. **If the fix requires system installs or user action, STOP and report:**
+   - Exactly what is missing
+   - Why it's missing
+   - How to install/verify it
+   - Commands to diagnose the current state
+
+**Fallbacks (CPU, reduced mode, mocks) are allowed ONLY if:**
+- Explicitly requested by the user, OR
+- Already defined as an opt-in mode
+
+**Defaults must remain on the best-supported path. Never silently degrade behavior to "make it work."**
+
 ### 1) Consistency-first rule (must-do before writing code)
 Before writing new code which establishes a new pattern, dev practice, minor architecture solution, algorithm, or UI technique, proactively search the repo for existing patterns, utilities, or implementations that solve a similar problem.
 

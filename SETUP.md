@@ -90,6 +90,39 @@ logging:
   level: "INFO"        # Change to "DEBUG" for troubleshooting
 ```
 
+### Step 6: Download Piper Voice Model
+
+Sovereign uses Piper TTS for high-quality neural speech synthesis.
+
+**Recommended models** (download at least one):
+
+1. **en_US-lessac-medium** (fast, good quality, 30MB):
+   - Model: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+   - Config: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+
+2. **en_US-libritts-high** (premium quality, 150MB):
+   - Model: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts/high/en_US-libritts-high.onnx
+   - Config: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts/high/en_US-libritts-high.onnx.json
+
+**PowerShell download commands**:
+```powershell
+# Create directory
+New-Item -ItemType Directory -Force -Path models\piper
+
+# Download lessac-medium
+Invoke-WebRequest -Uri "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx" -OutFile "models\piper\en_US-lessac-medium.onnx"
+Invoke-WebRequest -Uri "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" -OutFile "models\piper\en_US-lessac-medium.onnx.json"
+```
+
+**File placement**:
+- Place .onnx and .onnx.json files in `models/piper/`
+- Switch models by editing `voice_model` in config.yaml
+
+**GPU Acceleration** (optional):
+- CUDA toolkit usually comes with NVIDIA drivers
+- `onnxruntime-gpu` will use RTX 4070 automatically
+- Fallback to CPU if GPU unavailable
+
 ## First Run
 
 ### Quick Test

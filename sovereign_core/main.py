@@ -177,7 +177,7 @@ class SovereignCore:
         self.stt = SpeechToText(config=self.config.stt)
         
         # Initialize text-to-speech
-        logger.info(f"Initializing TTS with provider: {self.config.tts.provider}")
+        logger.info(f"Initializing TTS with Piper voice: {self.config.tts.voice_model}")
         self.tts = TextToSpeech(config=self.config.tts)
         
         logger.info("All components initialized")
@@ -460,6 +460,13 @@ class SovereignCore:
                 self.stt.cleanup()
             except Exception as e:
                 logger.error(f"Error cleaning up STT: {e}")
+        
+        if self.tts:
+            try:
+                logger.debug("Cleaning up TTS")
+                self.tts.cleanup()
+            except Exception as e:
+                logger.error(f"Error cleaning up TTS: {e}")
         
         logger.info("Sovereign Core stopped")
         print("[+] Shutdown complete")
