@@ -170,7 +170,10 @@ class SovereignCore:
         
         # Initialize audio capture
         logger.info("Initializing audio capture")
-        self.audio_capture = AudioCapture(config=self.config.audio)
+        self.audio_capture = AudioCapture(
+            config=self.config.audio,
+            turn_taking_config=self.config.turn_taking
+        )
         
         # Initialize speech-to-text
         logger.info(f"Initializing STT with model: {self.config.stt.model_size}")
@@ -273,8 +276,8 @@ class SovereignCore:
                         break
                 
                 # Step 2: Capture user audio
-                logger.info("Capturing audio...")
-                audio_recording = self.audio_capture.capture(duration=5)
+                logger.info("Capturing audio with VAD-based endpointing...")
+                audio_recording = self.audio_capture.capture_with_vad()
                 
                 if not audio_recording or not audio_recording.audio_data.size:
                     logger.warning("No audio captured")

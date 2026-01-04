@@ -51,6 +51,14 @@ audio:
   frame_duration_ms: 30
   device_index: null
 
+turn_taking:
+  vad_aggressiveness: 2
+  min_speech_duration_ms: 300
+  end_silence_duration_ms: 700
+  post_speech_grace_ms: 500
+  max_recording_duration_s: 15
+  vad_frame_duration_ms: 30
+
 stt:
   model_size: base
   device: cpu
@@ -79,6 +87,11 @@ router:
     - resume
     - next
     - previous
+
+conversation:
+  max_history_messages: 10
+  context_messages: 10
+  follow_up_timeout_seconds: 10.0
 """
     config_file = tmp_path / "config.yaml"
     config_file.write_text(config_content)

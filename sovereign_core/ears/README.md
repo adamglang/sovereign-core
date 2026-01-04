@@ -1,6 +1,6 @@
 # Ears Module - Wake Word Detection and Audio Capture
 
-This module provides pluggable wake word detection and audio capture capabilities for Sovereign Core.
+This module provides pluggable wake word detection, VAD-based turn-taking, and audio capture capabilities for Sovereign Core.
 
 ## Architecture
 
@@ -16,9 +16,12 @@ The module follows a provider pattern for wake word detection, allowing easy swa
 - **[`providers/`](providers/)** - Concrete wake word engine implementations
   - **[`porcupine_provider.py`](providers/porcupine_provider.py)** - Picovoice Porcupine implementation
 
-#### Audio Capture
+#### Audio Capture and Turn-Taking
 
-- **[`audio_capture.py`](audio_capture.py)** - Audio recording after wake word detection
+- **[`audio_capture.py`](audio_capture.py)** - Audio recording with VAD-based turn-taking
+  - Intelligent endpointing using WebRTC VAD
+  - State machine for natural conversation flow
+  - Configurable grace periods and silence thresholds
 - **[`speech_to_text.py`](speech_to_text.py)** - Speech transcription using Whisper
 
 ## Usage
@@ -63,6 +66,59 @@ if detector.wait_for_wake_word():
 
 detector.stop()
 ```
+
+### Audio Capture with VAD-Based Turn-Taking
+
+```python
+from sovereign_core.ears import AudioCapture
+from sovereign_core.config import AudioConfig, TurnTakingConfig
+
+audio_config = AudioConfig(
+    sample_rate=16000,
+    channels=1
+)
+
+turn_taking_config = TurnTakingConfig(
+    vad_aggressiveness=2,              # 0-3 sensitivity
+    end_silence_duration_ms=700,       # Silence to end utterance
+    post_speech_grace_ms=500,          # Grace period for trailing sounds
+    max_recording_duration_s=15        # Safety ceiling
+)
+
+capture = AudioCapture(
+    config=audio_config,
+    turn_taking_config=turn_taking_config
+)
+
+# Capture with intelligent endpointing
+recording = capture.capture_with_vad()
+print(f"Captured {len(recording.audio_data)} samples")
+
+# Or use fixed duration (backward compatible)
+recording = capture.capture(duration=5.0)
+```
+
+### Turn-Taking Configuration
+
+The VAD-based turn-taking system uses a 5-state machine:
+1. **WAITING_FOR_SPEECH** - Buffering until speech detected
+2. **SPEECH_DETECTED** - Actively recording
+3. **SILENCE_AFTER_SPEECH** - Silence detected, accumulating duration
+4. **GRACE_PERIOD** - Silence threshold met, cancellable if speech resumes
+5. **FINALIZED** - Recording complete
+
+**Tuning Parameters** (in `config.yaml`):
+- `vad_aggressiveness` (0-3): Higher = more aggressive silence detection
+- `min_speech_duration_ms`: Minimum speech duration to process (filters noise)
+- `end_silence_duration_ms`: Silence duration to consider utterance ended
+- `post_speech_grace_ms`: Grace period after silence (captures trailing sounds)
+- `max_recording_duration_s`: Safety ceiling to prevent infinite recording
+- `vad_frame_duration_ms`: VAD processing frame size (10/20/30ms)
+
+**Common Adjustments:**
+- If cut off mid-sentence: Increase `end_silence_duration_ms` and `post_speech_grace_ms`
+- If waits too long: Decrease `end_silence_duration_ms` and `post_speech_grace_ms`
+- If background noise triggers: Increase `vad_aggressiveness` and `min_speech_duration_ms`
 
 ## Adding New Wake Word Providers
 
@@ -121,7 +177,7 @@ class CustomProvider(WakeWordProvider):
 
 ## Configuration
 
-Wake word detection is configured via [`config.yaml`](../../config.yaml):
+Wake word detection and turn-taking are configured via [`config.yaml`](../../config.yaml):
 
 ```yaml
 wake_word:
@@ -129,21 +185,49 @@ wake_word:
   access_key: ${PORCUPINE_ACCESS_KEY}
   sensitivity: 0.7
   model_path: null  # Optional custom model
+
+turn_taking:
+  vad_aggressiveness: 2              # 0-3, higher = more aggressive
+  min_speech_duration_ms: 300        # Filters false starts
+  end_silence_duration_ms: 700       # Natural pause detection
+  post_speech_grace_ms: 500          # Capture trailing sounds
+  max_recording_duration_s: 15       # Safety ceiling
+  vad_frame_duration_ms: 30          # Optimal for 16kHz audio
 ```
 
 ## Testing
 
-Tests are located in [`../../tests/test_wake_word_detector.py`](../../tests/test_wake_word_detector.py).
+Tests are located in:
+- [`../../tests/test_wake_word_detector.py`](../../tests/test_wake_word_detector.py) - Wake word detection
+- [`../../tests/test_audio_capture.py`](../../tests/test_audio_capture.py) - Audio capture
+- [`../../tests/test_turn_taking.py`](../../tests/test_turn_taking.py) - VAD turn-taking
 
 Run tests with:
 ```bash
 pytest tests/test_wake_word_detector.py -v
+pytest tests/test_audio_capture.py -v
+pytest tests/test_turn_taking.py -v
 ```
 
 ## Design Principles
 
 1. **Provider Pattern**: Easy swapping of wake word engines without code changes
-2. **Backward Compatibility**: Existing code continues to work through the wrapper
-3. **Clean Abstractions**: Providers implement a simple, focused interface
-4. **Factory Creation**: Centralized provider instantiation for consistency
-5. **Configuration-Driven**: Provider selection via config, not code
+2. **Direct Implementation**: VAD uses single implementation (WebRTC) - no provider abstraction (matches TTS pattern)
+3. **Backward Compatibility**: Existing code continues to work through the wrapper
+4. **Clean Abstractions**: Providers implement a simple, focused interface
+5. **Factory Creation**: Centralized provider instantiation for consistency
+6. **Configuration-Driven**: Provider selection and behavior via config, not code
+7. **Structured Logging**: All turn-taking events logged with timing for debugging
+
+## Architecture Decisions
+
+### Why Direct Implementation for VAD?
+
+Unlike wake word detection (which uses a provider pattern), VAD turn-taking uses **direct implementation** following the TTS precedent:
+
+- **Not user-facing choice**: VAD is internal implementation detail, not a feature users select
+- **Single correct solution**: WebRTC VAD is industry standard, no compelling alternatives
+- **Tight coupling**: VAD is intrinsic to audio capture, not a separate concern
+- **YAGNI principle**: No current need for VAD swapping; premature abstraction adds complexity
+
+See [`docs/major_work_completed/turn-taking-vad-implementation.md`](../../docs/major_work_completed/turn-taking-vad-implementation.md) for full implementation details.
