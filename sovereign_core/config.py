@@ -33,6 +33,24 @@ class AudioConfig(BaseModel):
     device_index: Optional[int] = None
 
 
+class TurnTakingConfig(BaseModel):
+    """Turn-taking and voice activity detection configuration."""
+    
+    vad_aggressiveness: int = Field(default=2, ge=0, le=3)
+    min_speech_duration_ms: int = Field(default=300, ge=100)
+    end_silence_duration_ms: int = Field(default=700, ge=200)
+    post_speech_grace_ms: int = Field(default=500, ge=0)
+    max_recording_duration_s: int = Field(default=15, ge=5)
+    vad_frame_duration_ms: int = Field(default=30)
+    
+    @field_validator("vad_frame_duration_ms")
+    @classmethod
+    def validate_frame_duration(cls, v: int) -> int:
+        if v not in [10, 20, 30]:
+            raise ValueError("VAD frame duration must be 10, 20, or 30 ms")
+        return v
+
+
 class STTConfig(BaseModel):
     """Speech-to-Text configuration."""
 
@@ -110,6 +128,7 @@ class SovereignConfig(BaseModel):
 
     wake_word: WakeWordConfig
     audio: AudioConfig
+    turn_taking: TurnTakingConfig
     stt: STTConfig
     llm: LLMConfig
     tts: TTSConfig

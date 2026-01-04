@@ -35,6 +35,14 @@ def valid_config_data():
             "sample_rate": 16000,
             "channels": 1,
         },
+        "turn_taking": {
+            "vad_aggressiveness": 2,
+            "min_speech_duration_ms": 300,
+            "end_silence_duration_ms": 700,
+            "post_speech_grace_ms": 500,
+            "max_recording_duration_s": 15,
+            "vad_frame_duration_ms": 30,
+        },
         "stt": {
             "model_size": "base",
             "device": "cpu",
@@ -262,6 +270,7 @@ def test_config_uses_sovereign_config_path_env_var():
         yaml.dump({
             "wake_word": {"access_key": "${PORCUPINE_ACCESS_KEY}"},
             "audio": {},
+            "turn_taking": {},
             "stt": {},
             "llm": {},
             "tts": {},

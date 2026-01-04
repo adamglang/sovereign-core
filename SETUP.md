@@ -42,14 +42,34 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-### Step 3: Install Dependencies
+### Step 3: Install Microsoft C++ Build Tools (Required)
+
+Sovereign uses WebRTC VAD for intelligent audio endpointing, which requires compilation on Windows.
+
+**Install C++ Build Tools BEFORE installing dependencies:**
+
+1. Download: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+2. Run installer and select "Desktop development with C++"
+3. Complete installation (may require restart)
+
+**Note:** This is required for the `webrtcvad` package to compile. Skip at your own risk - the system will fall back to fixed-duration recording without VAD.
+
+### Step 4: Install Dependencies
+
 ```bash
-# Install the package with all dependencies
+# Install the package with all dependencies (including webrtcvad)
 pip install -e .
 
 # For development (includes testing tools)
 pip install -e ".[dev]"
 ```
+
+**Verify WebRTC VAD installed correctly:**
+```bash
+python -c "import webrtcvad; print('✓ WebRTC VAD available')"
+```
+
+If you see the success message, you're ready to go. If installation fails, verify C++ Build Tools are installed correctly.
 
 ### Step 4: Configure Environment Variables
 Create a `.env` file in the project root or set environment variables:
@@ -78,6 +98,12 @@ wake_word:
   access_key: ${PORCUPINE_ACCESS_KEY}  # Uses environment variable
   sensitivity: 0.5  # Adjust 0.0-1.0 for wake word sensitivity
 
+turn_taking:
+  vad_aggressiveness: 2              # 0-3, higher = more aggressive silence detection
+  end_silence_duration_ms: 700       # Silence duration to end utterance
+  post_speech_grace_ms: 500          # Grace period after silence
+  max_recording_duration_s: 15       # Safety ceiling
+
 stt:
   model_size: "base"  # Options: tiny, base, small, medium, large-v2, large-v3
   device: "cpu"       # Use "cuda" if you have NVIDIA GPU
@@ -89,6 +115,11 @@ llm:
 logging:
   level: "INFO"        # Change to "DEBUG" for troubleshooting
 ```
+
+**Turn-Taking Tuning:**
+- If Sovereign cuts you off mid-sentence: increase `end_silence_duration_ms` to 1000-1500
+- If Sovereign waits too long: decrease `end_silence_duration_ms` to 500-600
+- See full tuning guide in [`config.yaml`](config.yaml) comments
 
 ### Step 6: Download Piper Voice Model
 
@@ -142,7 +173,9 @@ python -m sovereign_core.main
    - Console shows: `✅ Wake word detected! Speak now...`
 
 3. **Voice Interaction:**
-   - Speak your question or command (5 seconds of audio capture)
+   - Speak your question or command
+   - System uses VAD to detect when you finish speaking
+   - Automatically finalizes after ~1 second of silence
    - System transcribes your speech
    - Shows: `💬 You: [your transcribed text]`
    - Processes request and speaks response
@@ -183,7 +216,25 @@ python -m sovereign_core.main
 2. Verify microphone permissions
 3. Check `logs/sovereign.log` for errors
 4. Try smaller model: set `model_size: "tiny"` in config.yaml
-5. Speak after the beep, within 5 seconds
+5. Speak clearly after wake word detection
+
+### System Cuts Off Mid-Sentence
+**Problem:** Sovereign starts responding before you finish speaking
+
+**Solutions:**
+1. Increase `end_silence_duration_ms` in config.yaml (try 1000-1500)
+2. Increase `post_speech_grace_ms` (try 700-1000)
+3. Decrease `vad_aggressiveness` for less aggressive silence detection (try 1)
+4. Check logs for turn-taking events to see timing
+
+### System Waits Too Long
+**Problem:** Long pause after you finish speaking
+
+**Solutions:**
+1. Decrease `end_silence_duration_ms` in config.yaml (try 500-600)
+2. Decrease `post_speech_grace_ms` (try 300-400)
+3. Increase `vad_aggressiveness` for more aggressive silence detection (try 3)
+4. Verify webrtcvad is installed (check logs for VAD-related messages)
 
 ### OpenAI API Errors
 **Problem:** "API key not found" or rate limit errors
@@ -285,10 +336,11 @@ sovereign-core/
 
 ### Response Times
 - **Wake word detection:** <100ms
-- **Audio capture:** 5 seconds (configurable)
+- **Audio capture:** ~1-2 seconds after you stop speaking (VAD-based)
 - **Transcription:** 1-3 seconds (base model, CPU)
 - **LLM response:** 1-5 seconds (depends on OpenAI API)
 - **TTS playback:** Real-time (depends on response length)
+- **Total response time:** ~3-10 seconds from end of your speech
 
 ### Model Download Times (first run)
 - **Whisper base:** ~150MB, 2-5 minutes

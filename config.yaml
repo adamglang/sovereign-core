@@ -23,6 +23,21 @@ audio:
   # Input device index (null = default device)
   device_index: null
 
+# Turn-taking and voice activity detection settings
+turn_taking:
+  # VAD aggressiveness (0-3): higher = more aggressive filtering, fewer false positives
+  vad_aggressiveness: 2
+  # Minimum speech duration in milliseconds to trigger recording
+  min_speech_duration_ms: 300
+  # Duration of silence in milliseconds to end recording
+  end_silence_duration_ms: 700
+  # Grace period in milliseconds after speech ends before processing
+  post_speech_grace_ms: 500
+  # Maximum recording duration in seconds (safety limit)
+  max_recording_duration_s: 15
+  # VAD frame duration in milliseconds (must be 10, 20, or 30)
+  vad_frame_duration_ms: 30
+
 # Speech-to-Text settings
 stt:
   # faster-whisper model size: tiny, base, small, medium, large-v2, large-v3
@@ -49,8 +64,8 @@ llm:
 # Text-to-Speech settings
 tts:
   # Piper voice model name (without .onnx extension)
-  # Options: en_US-lessac-medium, en_US-libritts-high, en_US-ryan-high
-  voice_model: "en_US-libritts-high"
+  # Options: en_US-lessac-medium, en_US-libritts-high, en_US-amy-medium
+  voice_model: "en_US-amy-medium"
   
   # Speaker ID for multi-speaker models (null = default speaker)
   speaker_id: null

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from sovereign_core.config import AudioConfig
+from sovereign_core.config import AudioConfig, TurnTakingConfig
 from sovereign_core.ears.audio_capture import AudioCapture, AudioRecording
 
 
@@ -26,6 +26,19 @@ def stereo_audio_config():
         sample_rate=16000,
         channels=2,
         device_index=0,
+    )
+
+
+@pytest.fixture
+def turn_taking_config():
+    """Turn-taking configuration with default values."""
+    return TurnTakingConfig(
+        vad_aggressiveness=2,
+        min_speech_duration_ms=300,
+        end_silence_duration_ms=700,
+        post_speech_grace_ms=500,
+        max_recording_duration_s=15,
+        vad_frame_duration_ms=30,
     )
 
 
@@ -179,9 +192,12 @@ def test_mono_audio_flattened(mock_sd, valid_audio_config):
 @patch('sovereign_core.ears.audio_capture.sd')
 def test_microphone_access_failure(mock_sd, valid_audio_config):
     """Test handling of microphone access errors."""
-    import sounddevice as sd
+    # Create a mock exception that looks like PortAudioError
+    class MockPortAudioError(Exception):
+        pass
     
-    mock_sd.rec.side_effect = sd.PortAudioError("Device not found")
+    MockPortAudioError.__name__ = 'PortAudioError'
+    mock_sd.rec.side_effect = MockPortAudioError("Device not found")
     
     capture = AudioCapture(valid_audio_config)
     
@@ -284,6 +300,56 @@ def test_audio_data_format_is_int16(mock_sd, valid_audio_config):
     recording = capture.capture()
     
     assert recording.audio_data.dtype == np.int16
+
+
+@patch('sovereign_core.ears.audio_capture.WEBRTCVAD_AVAILABLE', True)
+@patch('sovereign_core.ears.audio_capture.webrtcvad')
+def test_audio_capture_initialization_with_turn_taking(mock_vad, valid_audio_config, turn_taking_config):
+    """Test AudioCapture initializes correctly with turn_taking_config."""
+    # Mock the VAD constructor
+    mock_vad_instance = MagicMock()
+    mock_vad.Vad.return_value = mock_vad_instance
+    
+    capture = AudioCapture(
+        valid_audio_config,
+        turn_taking_config=turn_taking_config,
+        default_duration=5.0
+    )
+    
+    # Verify config values stored correctly
+    assert capture.config == valid_audio_config
+    assert capture.turn_taking_config == turn_taking_config
+    assert capture.default_duration == 5.0
+    
+    # Verify VAD was created with correct aggressiveness level
+    mock_vad.Vad.assert_called_once_with(turn_taking_config.vad_aggressiveness)
+    assert capture.vad == mock_vad_instance
+
+
+@patch('sovereign_core.ears.audio_capture.sd')
+def test_capture_backward_compatibility(mock_sd, valid_audio_config):
+    """Test old capture(duration) method still works without turn_taking_config."""
+    duration = 3.0
+    sample_rate = 16000
+    num_samples = int(duration * sample_rate)
+    mock_audio = np.random.randint(-32768, 32767, size=num_samples, dtype=np.int16)
+    
+    mock_sd.rec.return_value = mock_audio
+    mock_sd.wait.return_value = None
+    
+    # Initialize without turn_taking_config
+    capture = AudioCapture(valid_audio_config, default_duration=duration)
+    
+    # Verify VAD is None
+    assert capture.vad is None
+    assert capture.turn_taking_config is None
+    
+    # Verify capture still works
+    recording = capture.capture()
+    
+    assert isinstance(recording, AudioRecording)
+    assert len(recording.audio_data) == num_samples
+    assert recording.sample_rate == sample_rate
 
 
 if __name__ == "__main__":

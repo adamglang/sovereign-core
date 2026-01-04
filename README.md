@@ -19,6 +19,7 @@ Sovereign Core is the brain, ears, and mouth. It:
 ### 🎤 Ears
 - Always-on microphone capture
 - Wake-word detection (Picovoice Porcupine)
+- VAD-based turn-taking with intelligent endpointing
 - Hotkey/click-to-talk fallback
 - Audio stream management
 
@@ -57,6 +58,7 @@ Those are the responsibilities of **Sovereign Executor**.
 - **Language:** Python
 - **Runtime:** Native Windows (not WSL)
 - **Wake Word:** Picovoice Porcupine
+- **VAD:** WebRTC VAD (voice activity detection)
 - **Audio:** sounddevice or pyaudio
 - **STT:** faster-whisper (local, offline)
 - **LLM:** Pluggable (cloud or local)
